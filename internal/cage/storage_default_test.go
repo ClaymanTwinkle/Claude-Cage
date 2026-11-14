@@ -15,7 +15,7 @@ func TestWindowsInitialDataDirectoryAndApplicationBoundary(t *testing.T) {
 	if got := initialStorageDirectory(backend, "windows"); got != "" {
 		t.Fatalf("unmarked build default=%s", got)
 	}
-	writeStorageFixture(t, filepath.Join(app, "Cage.install-id"), []byte("io.github.lee-xeo.claude-cage"))
+	writeStorageFixture(t, filepath.Join(app, "Cage.install-id"), []byte("com.claymantwinkle.cage"))
 	data := filepath.Join(app, "CageData")
 	if got := initialStorageDirectory(backend, "windows"); got != data {
 		t.Fatalf("default=%s want=%s", got, data)

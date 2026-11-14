@@ -126,7 +126,7 @@ try
     {
         Directory.CreateDirectory(Path.Combine(directory, "resources"));
         File.WriteAllText(Path.Combine(directory, "Cage.exe"), "original launcher");
-        File.WriteAllText(Path.Combine(directory, "Cage.install-id"), "io.github.lee-xeo.claude-cage");
+        File.WriteAllText(Path.Combine(directory, "Cage.install-id"), "com.claymantwinkle.cage");
         File.WriteAllText(Path.Combine(directory, "resources", "cage.exe"), "original backend");
     }
     Directory.CreateDirectory(Path.Combine(intactApp, "my-project"));

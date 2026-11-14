@@ -54,7 +54,7 @@ if [[ "$platform" == macos ]]; then
 <plist version="1.0"><dict>
 <key>CFBundleName</key><string>Cage Client</string>
 <key>CFBundleDisplayName</key><string>Cage Client</string>
-<key>CFBundleIdentifier</key><string>io.github.lee-xeo.claude-cage-client</string>
+<key>CFBundleIdentifier</key><string>com.claymantwinkle.cage-client</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundleShortVersionString</key><string>$short_version</string>
 <key>CageVersion</key><string>$version</string>

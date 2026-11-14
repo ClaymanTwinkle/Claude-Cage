@@ -122,7 +122,8 @@ jobs:
           retention-days: 14
 
   release:
-    if: ${{ inputs.release && github.event_name == 'workflow_dispatch' }}
+    # fork：fork-nightly.yml 由 CI 成功后的 workflow_run 触发签名构建。
+    if: ${{ inputs.release && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.repository == 'ClaymanTwinkle/Claude-Cage')) }}
     needs: checks
     runs-on: macos-15
     environment: cage-release

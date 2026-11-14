@@ -44,7 +44,7 @@ internal static class UpdateInstaller
             // Also release an inherited install-directory lock when this helper
             // is invoked by a launcher that did not choose a safe directory.
             Directory.SetCurrentDirectory(AppUpdater.Root);
-            if (File.ReadAllText(Path.Combine(plan.Target, "Cage.install-id")).Trim() != "io.github.lee-xeo.claude-cage")
+            if (File.ReadAllText(Path.Combine(plan.Target, "Cage.install-id")).Trim() != "com.claymantwinkle.cage")
                 throw new IOException("请先使用 Cage 安装程序安装应用，再自动更新");
             var original = Path.Combine(plan.Target, "Cage.exe");
             var ownPublisher = Authenticode.Publisher(Environment.ProcessPath!);

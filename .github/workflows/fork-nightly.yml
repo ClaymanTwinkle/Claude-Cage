@@ -1,0 +1,108 @@
+name: Fork nightly (signed macOS + test packages)
+# fork 专用：main 上的三平台 CI 通过后，用 fork 自己的 Developer ID 签名并公证 macOS 包，
+# 再把 macOS / Windows / Linux / Android 安装包发布到固定的预发布版本 nightly（每次覆盖）。
+on:
+  workflow_run:
+    workflows: ['Three-platform checks and test packages']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: 已成功的 CI 运行编号（留空则取 main 最近一次成功的运行）
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: fork-nightly
+  cancel-in-progress: true
+
+jobs:
+  source:
+    if: >-
+      github.repository == 'ClaymanTwinkle/Claude-Cage' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    outputs:
+      run_id: ${{ steps.pick.outputs.run_id }}
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          id="${EVENT_RUN_ID:-$INPUT_RUN_ID}"
+          if [[ -z "$id" ]]; then
+            id=$(gh run list -R "$REPO" --workflow ci.yml --branch main --event push --status success -L 1 --json databaseId -q '.[0].databaseId')
+          fi
+          [[ "$id" =~ ^[0-9]+$ ]] || { echo "没有可用的 CI 运行" >&2; exit 1; }
+          read -r conclusion sha < <(gh api "repos/$REPO/actions/runs/$id" -q '"\(.conclusion) \(.head_sha)"')
+          [[ "$conclusion" == success ]] || { echo "CI 运行 $id 未成功：$conclusion" >&2; exit 1; }
+          echo "run_id=$id" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: source
+    uses: ./.github/workflows/macos-build.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.source.outputs.sha }}
+      release: true
+      artifact_name: cage-macos-arm64-signed
+
+  publish:
+    needs: [source, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Collect installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CI_RUN: ${{ needs.source.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p dl out
+          gh run download "$GITHUB_RUN_ID" -R "$REPO" -n cage-macos-arm64-signed -D dl/macos
+          for name in cage-linux-amd64-test cage-mobile-test-android-arm64; do
+            gh run download "$CI_RUN" -R "$REPO" -n "$name" -D "dl/$name"
+          done
+          win=$(gh api "repos/$REPO/actions/runs/$CI_RUN/artifacts?per_page=100" \
+            -q '[.artifacts[].name | select(test("^cage-windows-amd64-test-windows-[0-9]+$"))][0]')
+          gh run download "$CI_RUN" -R "$REPO" -n "$win" -D dl/windows
+          # 只发安装包和 GPL 组件的对应源码，同名文件（各平台共用的 mihomo 源码）只保留一份
+          find dl -type f \( -name '*.dmg' -o -name '*-setup*.exe' -o -name '*.deb' -o -name '*.apk' \
+            -o -name '*-source.tar.gz' -o -name '*-full-source.*' \) -print0 |
+            while IFS= read -r -d '' f; do
+              [[ -e "out/${f##*/}" ]] || cp "$f" out/
+            done
+          for pattern in '*.dmg' '*-setup*.exe' '*.deb' '*.apk'; do
+            compgen -G "out/$pattern" > /dev/null || { echo "缺少安装包：$pattern" >&2; exit 1; }
+          done
+          (cd out && sha256sum -- * > SHA256SUMS)
+          ls -la out
+      - name: Replace the nightly prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ needs.source.outputs.sha }}
+          CI_RUN: ${{ needs.source.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          notes=$(printf '%s\n' \
+            "fork 自动构建，源码提交 ${SHA}，来自 CI 运行 https://github.com/${REPO}/actions/runs/${CI_RUN}" \
+            "" \
+            "- macOS（Apple Silicon）：fork 的 Developer ID 签名并经苹果公证，可直接打开" \
+            "- Windows / Linux / Android：CI 测试包，Windows 安装包未签名" \
+            "- 签名团队与上游正式版不同：应用内自动更新不会装上游版本，请从这里下载新包手动更新")
+          gh release delete nightly -R "$REPO" --cleanup-tag -y 2>/dev/null || true
+          gh release create nightly out/* -R "$REPO" --target "$SHA" --prerelease \
+            --title "Nightly $(tr -d '\r\n' <<< "$(gh api "repos/$REPO/contents/VERSION?ref=$SHA" -q .content | base64 -d)") (${SHA::7})" \
+            --notes "$notes"

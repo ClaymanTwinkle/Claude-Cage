@@ -1,4 +1,4 @@
-package io.github.leexeo.cage.mobile;
+package com.claymantwinkle.cage.mobile;
 
 import android.app.Activity;
 import android.app.AlertDialog;

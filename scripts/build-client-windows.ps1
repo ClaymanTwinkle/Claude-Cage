@@ -41,7 +41,7 @@ try {
         '-p:EnableWindowsTargeting=true', '-p:PublishSingleFile=true', '-p:RestoreLockedMode=true', "-p:Version=$version", "-p:InformationalVersion=$version", '-o', $app)
     Get-ChildItem -LiteralPath $app -File | Where-Object { $_.Extension -in @('.pdb', '.xml') } | Remove-Item -Force
     [IO.File]::WriteAllText((Join-Path $resources 'client-only'), '')
-    [IO.File]::WriteAllText((Join-Path $app 'Cage.client-id'), 'io.github.lee-xeo.claude-cage-client')
+    [IO.File]::WriteAllText((Join-Path $app 'Cage.client-id'), 'com.claymantwinkle.cage-client')
     [IO.File]::WriteAllText((Join-Path $app 'version.txt'), $version)
     Invoke-BuildTool $node @('scripts/bundle-cloud-kit.mjs', $resources)
     Invoke-BuildTool $node @('scripts/collect-app-licenses.mjs', (Join-Path $resources 'licenses'))

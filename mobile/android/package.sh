@@ -50,7 +50,7 @@ if [[ ! -f "$zxing" ]]; then
 fi
 echo "8d8064c1636fdaef7189dd9055c7d59950a8940a12f2293956446ec3c109fd82  $zxing" | shasum -a 256 --check --status
 bash "$android/fetch-webkit.sh" "$build"
-javac --release 8 -encoding UTF-8 -classpath "$platform:$work/aar/classes.jar:$zxing:$build/webkit-1.14.0.jar:$build/core-1.1.0.jar" -d "$work/classes" "$android"/src/io/github/leexeo/cage/mobile/*.java
+javac --release 8 -encoding UTF-8 -classpath "$platform:$work/aar/classes.jar:$zxing:$build/webkit-1.14.0.jar:$build/core-1.1.0.jar" -d "$work/classes" "$android"/src/com/claymantwinkle/cage/mobile/*.java
 jar cf "$work/app.jar" -C "$work/classes" .
 "$tools/d8" --min-api 26 --lib "$platform" --output "$work/dex" "$work/app.jar" "$work/aar/classes.jar" "$zxing" "$build/webkit-1.14.0.jar" "$build/core-1.1.0.jar"
 cp "$work/dex/"*.dex "$work/apk/"
