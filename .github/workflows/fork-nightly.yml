@@ -86,7 +86,7 @@ jobs:
           for pattern in '*.dmg' '*-setup*.exe' '*.deb' '*.apk'; do
             compgen -G "out/$pattern" > /dev/null || { echo "缺少安装包：$pattern" >&2; exit 1; }
           done
-          (cd out && sha256sum * > SHA256SUMS)
+          (cd out && sha256sum -- * > SHA256SUMS)
           ls -la out
       - name: Replace the nightly prerelease
         env:
