@@ -1,4 +1,4 @@
-package io.github.leexeo.cage.mobile;
+package com.claymantwinkle.cage.mobile;
 
 import android.util.Base64;
 import org.json.JSONObject;

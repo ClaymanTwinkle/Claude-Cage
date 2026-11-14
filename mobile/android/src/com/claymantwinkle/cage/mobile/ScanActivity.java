@@ -1,4 +1,4 @@
-package io.github.leexeo.cage.mobile;
+package com.claymantwinkle.cage.mobile;
 
 import android.animation.ValueAnimator;
 import android.app.Activity;

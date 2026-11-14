@@ -28,7 +28,7 @@ ManifestSupportedOS all
   !error "OUTPUT_FILE is required"
 !endif
 
-!define APP_ID "io.github.lee-xeo.claude-cage"
+!define APP_ID "com.claymantwinkle.cage"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ClaudeCage"
 !define WEBVIEW2_APP_ID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 Name "Cage ${VERSION}"

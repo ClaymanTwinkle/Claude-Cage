@@ -1135,7 +1135,7 @@ static void create_window(void) {
     gtk_window_set_title(GTK_WINDOW(app.window), "Cage");
     gtk_window_set_default_size(GTK_WINDOW(app.window), 1280, 850);
     gtk_widget_set_size_request(app.window, 820, 580);
-    gtk_window_set_icon_name(GTK_WINDOW(app.window), "io.github.lee_xeo.Cage");
+    gtk_window_set_icon_name(GTK_WINDOW(app.window), "com.claymantwinkle.Cage");
     g_signal_connect(app.window, "delete-event", G_CALLBACK(close_window), NULL);
     g_signal_connect(app.window, "window-state-event", G_CALLBACK(visibility_changed), NULL);
     g_signal_connect(app.window, "map-event", G_CALLBACK(visibility_changed), NULL);
