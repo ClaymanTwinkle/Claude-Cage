@@ -265,6 +265,28 @@ test('macOS verification checks all owned archives without requiring other-platf
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('Intel macOS verification needs no macOS guest source and ignores the Apple Silicon archive', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cage-release-check-'));
+  const script = new URL('../../scripts/verify-macos-release.sh', import.meta.url);
+  const nativeReached = join(directory, 'native-check-reached');
+  writeFileSync(join(directory, 'codesign'), '#!/bin/sh\nprintf reached > "$CAGE_TEST_NATIVE_MARKER"\nexit 42\n', { mode: 0o700 });
+  const owned = ['Cage-0.2.0-macos-amd64.dmg', 'mihomo-v1.19.33-source.tar.gz'];
+  const other = ['Cage-0.2.0-macos-arm64.dmg', 'cage-macos-guest-0.2.0-source.tar.gz'];
+  for (const name of [...owned, ...other]) writeFileSync(join(directory, name), name);
+  const line = name => `${createHash('sha256').update(name).digest('hex')}  ${name}\n`;
+  const run = (text, arch) => {
+    rmSync(nativeReached, { force: true });
+    writeFileSync(join(directory, 'SHA256SUMS'), text);
+    return spawnSync('bash', [fileURLToPath(script), directory, arch], { encoding: 'utf8', env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, CAGE_TEST_NATIVE_MARKER: nativeReached } });
+  };
+  try {
+    assert.equal(run(owned.map(line).join('') + other.map(line).join(''), 'amd64').status, 42, 'Intel verification did not reach native checks');
+    assert.ok(existsSync(nativeReached));
+    assert.notEqual(run(line(owned[1]), 'amd64').status, 42, 'Intel verification passed without its archive checksum');
+    assert.notEqual(run(owned.map(line).join(''), 'x86').status, 42, 'an unknown architecture was accepted');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('explicit RC manifest exposes signed Windows and all platforms with complete QEMU sources', async () => {
   const tag = 'v0.1.7-rc.1', version = tag.slice(1);
   const names = [`Cage-${version}-macos-arm64.dmg`, `Cage-${version}-windows-amd64-setup.exe`, `Cage-${version}-linux-amd64.deb`, `cage-macos-guest-${version}-source.tar.gz`, 'mihomo-v1.19.33-source.tar.gz', 'qemu-11.1.0-windows-full-source.tar.gz', `qemu-${'a'.repeat(40)}-source.tar.gz`, `qemu-keycodemapdb-${'b'.repeat(40)}-source.tar.gz`, 'qemu-11.1.0-cage-changes-source.tar.gz', `Cage-${version}-android-arm64.apk`];

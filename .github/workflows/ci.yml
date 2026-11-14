@@ -45,6 +45,15 @@ jobs:
       ref: ${{ github.sha }}
       release: false
       artifact_name: cage-macos-arm64-test
+  # fork：Intel Mac 版（仅 Linux 客机）。
+  macos-intel:
+    needs: workflow-checks
+    uses: ./.github/workflows/macos-build.yml
+    with:
+      ref: ${{ github.sha }}
+      release: false
+      arch: amd64
+      artifact_name: cage-macos-amd64-test
   windows-updates:
     needs: workflow-checks
     strategy:

@@ -61,6 +61,9 @@ func (s *Server) guestInstallView() (guestInstallView, error) {
 	switch {
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
 		v.System = guestos.MacOS
+	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":
+		// Intel Macs have no same-system guest (macOS guests need Apple
+		// silicon), but their Ubuntu installations still resume or reselect.
 	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
 		v.System = guestos.Windows11
 	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":

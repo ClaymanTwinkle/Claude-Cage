@@ -56,8 +56,18 @@ jobs:
       release: true
       artifact_name: cage-macos-arm64-signed
 
+  macos-intel:
+    needs: source
+    uses: ./.github/workflows/macos-build.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.source.outputs.sha }}
+      release: true
+      arch: amd64
+      artifact_name: cage-macos-amd64-signed
+
   publish:
-    needs: [source, macos]
+    needs: [source, macos, macos-intel]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -71,6 +81,7 @@ jobs:
           set -euo pipefail
           mkdir -p dl out
           gh run download "$GITHUB_RUN_ID" -R "$REPO" -n cage-macos-arm64-signed -D dl/macos
+          gh run download "$GITHUB_RUN_ID" -R "$REPO" -n cage-macos-amd64-signed -D dl/macos-intel
           for name in cage-linux-amd64-test cage-mobile-test-android-arm64; do
             gh run download "$CI_RUN" -R "$REPO" -n "$name" -D "dl/$name"
           done
@@ -83,7 +94,7 @@ jobs:
             while IFS= read -r -d '' f; do
               [[ -e "out/${f##*/}" ]] || cp "$f" out/
             done
-          for pattern in '*.dmg' '*-setup*.exe' '*.deb' '*.apk'; do
+          for pattern in '*-macos-arm64.dmg' '*-macos-amd64.dmg' '*-setup*.exe' '*.deb' '*.apk'; do
             compgen -G "out/$pattern" > /dev/null || { echo "缺少安装包：$pattern" >&2; exit 1; }
           done
           (cd out && sha256sum -- * > SHA256SUMS)
@@ -99,7 +110,7 @@ jobs:
           notes=$(printf '%s\n' \
             "fork 自动构建，源码提交 ${SHA}，来自 CI 运行 https://github.com/${REPO}/actions/runs/${CI_RUN}" \
             "" \
-            "- macOS（Apple Silicon）：fork 的 Developer ID 签名并经苹果公证，可直接打开" \
+            "- macOS：fork 的 Developer ID 签名并经苹果公证，可直接打开。macos-arm64 为 Apple Silicon 版；macos-amd64 为 Intel 版，仅支持 Linux 客机" \
             "- Windows / Linux / Android：CI 测试包，Windows 安装包未签名" \
             "- 签名团队与上游正式版不同：应用内自动更新不会装上游版本，请从这里下载新包手动更新")
           gh release delete nightly -R "$REPO" --cleanup-tag -y 2>/dev/null || true
