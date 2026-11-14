@@ -56,7 +56,13 @@ jar cf "$work/app.jar" -C "$work/classes" .
 cp "$work/dex/"*.dex "$work/apk/"
 (cd "$work/apk" && zip -q -0 "$work/base.apk" ./*.dex lib/arm64-v8a/libgojni.so assets/licenses/ZXing-LICENSE.txt)
 "$tools/zipalign" -f -P 16 4 "$work/base.apk" "$work/aligned.apk"
-if [[ "${1:-}" != --release ]]; then
+if [[ "${1:-}" != --release && -n "${CAGE_ANDROID_DEV_KEYSTORE:-}" ]]; then
+  # A persistent development key (CI) lets one development APK update another.
+  : "${CAGE_ANDROID_DEV_KEY_ALIAS:?Set the development key alias}"
+  : "${CAGE_ANDROID_DEV_PASSWORD_FILE:?Set the development keystore password file path}"
+  [[ -f "$CAGE_ANDROID_DEV_KEYSTORE" && -s "$CAGE_ANDROID_DEV_PASSWORD_FILE" ]] || { echo 'Android development signing material is unavailable.' >&2; exit 1; }
+  signing_args=(--ks "$CAGE_ANDROID_DEV_KEYSTORE" --ks-key-alias "$CAGE_ANDROID_DEV_KEY_ALIAS" --ks-pass "file:$CAGE_ANDROID_DEV_PASSWORD_FILE")
+elif [[ "${1:-}" != --release ]]; then
   key="$build/development.p12"
   if [[ ! -f "$key" ]]; then
     (umask 077; keytool -genkeypair -alias development -keyalg RSA -keysize 2048 -validity 3650 \

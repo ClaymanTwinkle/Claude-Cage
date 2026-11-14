@@ -4,6 +4,8 @@
 
 Android arm64 APK 可从[官网下载入口](https://claude-cage.com/#download)获取，支持 Android 8.0+。iOS 17+ 设备版由用户通过 Xcode 在本地构建并签名安装。
 
+每次推送都会由 CI 构建手机端：Android 开发版 APK 上传为运行附件 `cage-mobile-test-android-arm64`（保留 14 天，附 SHA-256）；iOS 默认只做无签名编译检查，配置 App Store Connect 密钥后在 main 上传 TestFlight（见下文「上传 TestFlight」）。仓库配置了 Actions Secrets `CAGE_ANDROID_DEV_KEYSTORE_BASE64`、`CAGE_ANDROID_DEV_KEY_ALIAS`、`CAGE_ANDROID_DEV_PASSWORD` 时，CI 用这把固定的开发密钥签名，后续 CI 构建可直接覆盖安装；未配置时（如其他 fork）每次用临时密钥签名，覆盖安装前需先卸载。CI 开发密钥与正式发行密钥不同，两者签出的 APK 不能互相覆盖；正式发行仍按下文用持久签名密钥构建。本地构建也可通过环境变量 `CAGE_ANDROID_DEV_KEYSTORE`、`CAGE_ANDROID_DEV_KEY_ALIAS`、`CAGE_ANDROID_DEV_PASSWORD_FILE` 使用同一把开发密钥。
+
 ## iOS 本地构建
 
 在 Mac 安装完整 Xcode 与 iOS SDK，并完成 Xcode 首次启动设置。安装 Node.js 24 和符合 `bindings/go.mod` 的 Go 后，在仓库根目录执行。
@@ -21,6 +23,21 @@ bash mobile/build.sh ios-ipa TEAM_ID
 ```
 
 归档与 IPA 保存在 `mobile/.build/ios/device-*/`，导出后会验证设备描述文件与应用签名。
+
+### 上传 TestFlight
+
+使用 App Store Connect API 的「管理」角色团队密钥，由苹果云端管理发布证书签名并上传，不依赖 Xcode 登录的账号。「App 管理」角色的密钥没有云端签名权限。先在 App Store Connect 用该 Bundle ID 新建 App 记录；Bundle ID 可由首次签名自动注册。版本号取根目录 `VERSION` 去掉预发布后缀（如 `0.1.8-rc` 上传为 `0.1.8`），构建号须大于该版本已上传的构建。生成的 Info.plist 声明仅使用可豁免的标准加密（`ITSAppUsesNonExemptEncryption = NO`）。
+
+```sh
+export CAGE_ASC_KEY_PATH=/private/AuthKey_KEYID.p8
+export CAGE_ASC_KEY_ID=KEYID
+export CAGE_ASC_ISSUER_ID=ISSUER_ID
+export CAGE_IOS_APP_ID=com.example.cage.mobile
+export CAGE_IOS_BUILD_NUMBER=1
+bash mobile/build.sh ios-testflight TEAM_ID
+```
+
+CI 在推送 main 或手动运行时，若配置了 Actions Secrets `CAGE_ASC_KEY_P8`（.p8 文件内容）、`CAGE_ASC_KEY_ID`、`CAGE_ASC_ISSUER_ID`、`CAGE_IOS_TEAM_ID`、`CAGE_IOS_APP_ID`，以运行序号为构建号上传 TestFlight；其他分支或未配置时只做无签名编译检查。
 
 ## Android 构建与签名
 
