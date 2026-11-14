@@ -90,6 +90,17 @@ jobs:
           name: updater-${{ matrix.os }}-reports
           path: ${{ runner.temp }}/cage-smoke-update-*.json
           if-no-files-found: ignore
+      # A failed run retains its cage-update-flow-* fixture directory. Upload
+      # only its records (results, installer diagnostics, receipts, project
+      # markers); the packages and installed programs stay on the runner.
+      - uses: actions/upload-artifact@v4
+        if: failure() && env.CAGE_UPDATE_FLOW_EVIDENCE != ''
+        with:
+          name: updater-${{ matrix.os }}-evidence
+          path: |
+            ${{ env.CAGE_UPDATE_FLOW_EVIDENCE }}/**/*.json
+            ${{ env.CAGE_UPDATE_FLOW_EVIDENCE }}/**/*.txt
+          if-no-files-found: ignore
   windows:
     needs: workflow-checks
     uses: ./.github/workflows/windows-build.yml

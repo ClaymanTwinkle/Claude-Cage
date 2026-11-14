@@ -285,8 +285,13 @@ FunctionEnd
 
 !macro CheckStopped FILE
   ${If} ${FileExists} "$INSTDIR\${FILE}"
-    ; Exclusive write access also detects images whose VM/controller has no window.
-    System::Call 'kernel32::CreateFileW(w "$INSTDIR\${FILE}", i 0x40000000, i 0, p 0, i 3, i 0, p 0) p .r0'
+    ; Write access detects a running image even without a window: Windows
+    ; refuses to open a mapped executable for writing whatever the sharing.
+    ; Sharing read/write/delete (7) keeps that check but no longer fails on
+    ; short-lived readers that themselves allow writes, such as scanners.
+    ; A handle that denies write sharing (e.g. FileShare.Read in
+    ; test-windows-install.ps1) still fails here and aborts with exit 2.
+    System::Call 'kernel32::CreateFileW(w "$INSTDIR\${FILE}", i 0x40000000, i 7, p 0, i 3, i 0, p 0) p .r0'
     ${If} $0 == -1
       StrCpy $HelperExit "application_file_in_use"
       SetErrorLevel 2

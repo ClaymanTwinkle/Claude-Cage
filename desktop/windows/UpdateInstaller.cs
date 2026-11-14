@@ -26,6 +26,7 @@ internal static class UpdateInstaller
     {
         InstallPlan? plan = null;
         string? backup = null;
+        var diagnostics = "";
         var installerStarted = false;
         var committed = false;
         var succeeded = false;
@@ -62,6 +63,7 @@ internal static class UpdateInstaller
                 !string.Equals(parent.MainModule?.FileName, original, StringComparison.OrdinalIgnoreCase))
                 throw new IOException("更新请求进程身份不匹配");
             backup = Path.Combine(AppUpdater.Root, "previous-" + plan.Confirmation);
+            diagnostics = Path.Combine(AppUpdater.Root, "installer-" + plan.Confirmation + ".json");
             if (Directory.Exists(backup)) throw new IOException("更新备份目录已存在");
             // Preparation is reversible and completes before the controller stops.
             CopyTree(plan.Target, backup);
@@ -70,19 +72,23 @@ internal static class UpdateInstaller
             if (await Console.In.ReadLineAsync(inputTimeout.Token) != "COMMIT") return 1;
             committed = true;
             await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(45));
+            // The parent was the only process awaited by identity. A stopped
+            // controller and its children may still be exiting from the
+            // installation; NSIS would correctly refuse their mapped images.
+            await UpdateRecovery.WaitForInstallationProcesses(plan.Target, TimeSpan.FromSeconds(30));
             VerifyArchive(plan.Archive, plan.Digest, plan.Version, ownPublisher);
             // NSIS requires /D= to be the final, unquoted argument; the executable
             // path is passed separately and no command shell is involved.
             using (var installer = Process.Start(new ProcessStartInfo(plan.Archive) {
                 UseShellExecute = false, CreateNoWindow = true,
-                Arguments = "/S /UPDATE /D=" + plan.Target,
+                Arguments = "/S /UPDATE /DIAGNOSTICS=\"" + diagnostics + "\" /D=" + plan.Target,
                 WorkingDirectory = Path.GetDirectoryName(plan.Archive),
             }) ?? throw new IOException("无法启动 Windows 安装器"))
             {
                 installerStarted = true;
                 try { await installer.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(10)); }
                 catch (TimeoutException) { if (!installer.HasExited) installer.Kill(true); await installer.WaitForExitAsync(); throw; }
-                if (installer.ExitCode != 0) throw new IOException("Windows 安装程序未完成安装");
+                if (installer.ExitCode != 0) throw new IOException("Windows 安装程序未完成安装" + InstallerDiagnostic(diagnostics, installer.ExitCode));
             }
             EnsureInstallationComplete(plan.Target);
             Authenticode.SamePublisher(original, ownPublisher);
@@ -145,6 +151,9 @@ internal static class UpdateInstaller
                     Authenticode.SamePublisher(UpdateRecovery.BackendPath(backup), plan.Publisher);
                     await UpdateRecovery.PrepareRollback(backup);
                     if (launched is { HasExited: false }) { launched.Kill(); await launched.WaitForExitAsync(); }
+                    // The candidate's controller can still be exiting after its
+                    // lock is released; moving the installation needs it gone.
+                    await UpdateRecovery.WaitForInstallationProcesses(plan.Target, TimeSpan.FromSeconds(30));
                     var restored = plan.Target + ".restore-" + plan.Confirmation;
                     var failed = plan.Target + ".failed-" + plan.Confirmation;
                     CopyTree(backup, restored);
@@ -187,7 +196,12 @@ internal static class UpdateInstaller
         {
             launched?.Dispose();
             if (succeeded && plan != null && backup != null)
+            {
                 UpdateRecovery.CleanupAfterSuccess(backup, Path.GetDirectoryName(plan.Archive)!, Path.Combine(AppUpdater.Root, "launch-" + plan.Confirmation + ".json"));
+                // Failed transactions keep the installer diagnostics for support.
+                foreach (var path in new[] { diagnostics, diagnostics + ".helper.json" })
+                    try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
             else if (!committed) UpdateRecovery.CleanupDirectory(backup);
         }
     }
@@ -201,6 +215,30 @@ internal static class UpdateInstaller
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
+    }
+
+    // NSIS records its last phase; installation-files.ps1 records its failing
+    // operation. Both are bounded, fixed-vocabulary files without user content.
+    private static string InstallerDiagnostic(string path, int exitCode)
+    {
+        var details = new List<string> { "退出码 " + exitCode };
+        try
+        {
+            if (File.Exists(path) && new FileInfo(path).Length <= 16384)
+            {
+                using var installer = JsonDocument.Parse(File.ReadAllText(path));
+                if (installer.RootElement.Text("phase") is { Length: > 0 } phase) details.Add("阶段 " + phase);
+                if (installer.RootElement.Text("helperExit") is { Length: > 0 } helperExit) details.Add("helperExit " + helperExit);
+            }
+            var helper = path + ".helper.json";
+            if (File.Exists(helper) && new FileInfo(helper).Length <= 16384)
+            {
+                using var script = JsonDocument.Parse(File.ReadAllText(helper));
+                if (script.RootElement.Text("operation") is { Length: > 0 } operation) details.Add("文件步骤 " + operation + "/" + script.RootElement.Text("phase"));
+            }
+        }
+        catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException) { }
+        return "（" + string.Join("，", details) + "）";
     }
 
     private static void EnsureInstallationComplete(string target)

@@ -167,6 +167,14 @@ try {
                 if ($helper) { Check ($helper.WaitForExit(180000)) 'The updater helper did not exit.' }
                 $result = Wait-File (Join-Path $profile 'updates/last-result.json')
                 Check ([bool]$result.success -eq ($mode -eq 'success')) "Unexpected installation result: $($result.message)"
+                # Each failure mode must take its own recovery path. An installer
+                # that stops before the candidate starts also keeps the original,
+                # so success=false alone cannot tell a rollback from a rejection.
+                $expectedResult = @{
+                    'success' = 'Cage 已更新至'; 'installer-failure' = '更新未完成，原应用已保留：'
+                    'startup-failure' = '更新未完成，已恢复原应用：'
+                }[$mode]
+                Check (([string]$result.message).StartsWith($expectedResult, [StringComparison]::Ordinal)) "Unexpected installation path for ${mode}: $($result.message)"
                 Check ($finished.exit -eq $(if ($mode -eq 'success') { 0 } else { 1 })) 'The helper result and transaction return value disagreed.'
                 if ($helper) { Check ($helper.ExitCode -eq $finished.exit) "The helper process exit ($($helper.ExitCode)) disagreed with the transaction result ($($finished.exit))." }
             }
@@ -235,6 +243,10 @@ try {
     }
     # All paths below were created by this invocation. Preserve a failed run.
     if ($passed) { Remove-Item -LiteralPath $root -Recurse -Force }
-    else { Write-Warning "Update fixture evidence retained at $root" }
+    else {
+        Write-Warning "Update fixture evidence retained at $root"
+        # CI uploads the retained records (fixture-only data) from this path.
+        if ($env:GITHUB_ENV) { Add-Content -LiteralPath $env:GITHUB_ENV -Value "CAGE_UPDATE_FLOW_EVIDENCE=$root" }
+    }
     Write-Host "Windows update report: $reportPath"
 }
