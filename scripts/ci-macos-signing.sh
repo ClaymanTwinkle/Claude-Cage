@@ -6,7 +6,11 @@ cd "$(dirname "$0")/.."
 
 usage() { echo 'Usage: scripts/ci-macos-signing.sh run|cleanup' >&2; }
 case "${1:-}" in run|cleanup) ;; *) usage; exit 2 ;; esac
-[[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || { echo 'Apple Silicon macOS is required.' >&2; exit 1; }
+case "$(uname -s)/$(uname -m)" in
+  Darwin/arm64) release_arch=arm64 ;;
+  Darwin/x86_64) release_arch=amd64 ;;
+  *) echo 'macOS on Apple Silicon or Intel is required.' >&2; exit 1 ;;
+esac
 [[ "${GITHUB_ACTIONS:-}" == true && -n "${RUNNER_TEMP:-}" && -d "$RUNNER_TEMP" ]] || {
   echo 'This helper is restricted to a GitHub Actions runner.' >&2; exit 1;
 }
@@ -117,4 +121,4 @@ unset CAGE_MACOS_P12_BASE64 CAGE_MACOS_P12_PASSWORD CAGE_MACOS_SIGNING_IDENTITY 
 
 bash scripts/package-macos.sh
 version="$(tr -d '\r\n' < VERSION)"
-bash scripts/verify-macos-release.sh "$PWD/_output/releases/$version"
+bash scripts/verify-macos-release.sh "$PWD/_output/releases/$version" "$release_arch"

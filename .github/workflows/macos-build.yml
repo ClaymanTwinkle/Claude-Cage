@@ -1,4 +1,4 @@
-name: Build Cage for Apple Silicon
+name: Build Cage for macOS
 on:
   workflow_call:
     inputs:
@@ -15,14 +15,21 @@ on:
         description: Name of the resulting workflow artifact
         required: true
         type: string
+      arch:
+        description: arm64 (Apple Silicon, with macOS guests) or amd64 (Intel, Linux guests only)
+        required: false
+        type: string
+        default: arm64
 permissions:
   contents: read
 
 jobs:
   checks:
-    # GitHub's macos-15 image is arm64. Nested VMs are not available here.
-    runs-on: macos-15
-    timeout-minutes: 45
+    # macos-15 is arm64 and macos-15-intel is x86_64. Nested VMs are not available here.
+    runs-on: ${{ inputs.arch == 'amd64' && 'macos-15-intel' || 'macos-15' }}
+    # macos-15-intel runs the same build and suite about 3-4x slower
+    # (build ~17 min, Go tests ~25 min, against ~4 and ~8 on arm64).
+    timeout-minutes: ${{ inputs.arch == 'amd64' && 90 || 45 }}
     defaults:
       run:
         shell: bash
@@ -31,15 +38,18 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - name: Verify the exact source and Apple Silicon runner
+      - name: Verify the exact source and runner architecture
         env:
           BUILD_REF: ${{ inputs.ref }}
+          BUILD_ARCH: ${{ inputs.arch }}
           RELEASE_BUILD: ${{ inputs.release }}
         run: |
           [[ "$BUILD_REF" =~ ^[0-9a-f]{40}$ ]] || { echo 'Pass an exact commit SHA.' >&2; exit 1; }
           [[ "$(git rev-parse HEAD)" == "$BUILD_REF" ]]
-          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
-          if [[ "$RELEASE_BUILD" == true && "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then
+          case "$BUILD_ARCH" in arm64) machine=arm64 ;; amd64) machine=x86_64 ;; *) echo "Unsupported arch: $BUILD_ARCH" >&2; exit 1 ;; esac
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == "$machine" ]]
+          # fork：fork-nightly.yml 由 CI 成功后的 workflow_run 触发签名构建。
+          if [[ "$RELEASE_BUILD" == true && "$GITHUB_EVENT_NAME" != workflow_dispatch && ! ( "$GITHUB_EVENT_NAME" == workflow_run && "$GITHUB_REPOSITORY" == ClaymanTwinkle/Claude-Cage ) ]]; then
             echo 'Release candidates require an explicit release dispatch.' >&2
             exit 1
           fi
@@ -95,13 +105,22 @@ jobs:
           codesign --verify --deep --strict _output/Cage.app
           _output/Cage.app/Contents/Resources/cage --help
           _output/Cage.app/Contents/Resources/mihomo -v
-          [[ "$(lipo -archs _output/Cage.app/Contents/MacOS/Cage)" == arm64 ]]
+          expected=$([[ "$BUILD_ARCH" == arm64 ]] && echo arm64 || echo x86_64)
+          for executable in Contents/MacOS/Cage Contents/Resources/cage Contents/Resources/mihomo Contents/Resources/CageUpdateInstaller; do
+            [[ "$(lipo -archs "_output/Cage.app/$executable")" == "$expected" ]]
+          done
+          # macOS guests need Apple silicon virtualization; Intel builds omit the kit.
+          if [[ "$BUILD_ARCH" == arm64 ]]; then test -d _output/Cage.app/Contents/Resources/guest-os; else test ! -e _output/Cage.app/Contents/Resources/guest-os; fi
+        env:
+          BUILD_ARCH: ${{ inputs.arch }}
       - name: Archive a complete development App with executable permissions
         if: ${{ !inputs.release }}
+        env:
+          BUILD_ARCH: ${{ inputs.arch }}
         run: |
           version=$(tr -d '\r\n' < VERSION)
           mkdir -p _output/ci-macos-test
-          archive="$PWD/_output/ci-macos-test/Cage-$version-macos-arm64-test.tar.gz"
+          archive="$PWD/_output/ci-macos-test/Cage-$version-macos-$BUILD_ARCH-test.tar.gz"
           tar -czf "$archive" -C _output Cage.app
           check=$(mktemp -d "$RUNNER_TEMP/cage-app-archive.XXXXXX")
           trap 'rm -rf "$check"' EXIT
@@ -125,9 +144,9 @@ jobs:
     # fork：fork-nightly.yml 由 CI 成功后的 workflow_run 触发签名构建。
     if: ${{ inputs.release && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.repository == 'ClaymanTwinkle/Claude-Cage')) }}
     needs: checks
-    runs-on: macos-15
+    runs-on: ${{ inputs.arch == 'amd64' && 'macos-15-intel' || 'macos-15' }}
     environment: cage-release
-    timeout-minutes: 75
+    timeout-minutes: ${{ inputs.arch == 'amd64' && 150 || 75 }}
     defaults:
       run:
         shell: bash
@@ -136,13 +155,15 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - name: Verify the exact source and Apple Silicon runner
+      - name: Verify the exact source and runner architecture
         env:
           BUILD_REF: ${{ inputs.ref }}
+          BUILD_ARCH: ${{ inputs.arch }}
         run: |
           [[ "$BUILD_REF" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git rev-parse HEAD)" == "$BUILD_REF" ]]
-          [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]
+          case "$BUILD_ARCH" in arm64) machine=arm64 ;; amd64) machine=x86_64 ;; *) exit 1 ;; esac
+          [[ "$(uname -s)" == Darwin && "$(uname -m)" == "$machine" ]]
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -165,13 +186,17 @@ jobs:
         if: ${{ always() }}
         run: bash scripts/ci-macos-signing.sh cleanup
       - name: Stage only public release files
+        env:
+          BUILD_ARCH: ${{ inputs.arch }}
         run: |
           version=$(tr -d '\r\n' < VERSION)
           source_version=$(sed -n 's/^version=//p' scripts/fetch-proxy-core.sh)
           release="$PWD/_output/releases/$version"
           node scripts/release-version.mjs metadata macos "$release/build-metadata.json"
           mkdir -p _output/ci-macos-release
-          cp "$release/Cage-$version-macos-arm64.dmg" "$release/mihomo-$source_version-source.tar.gz" "$release/cage-macos-guest-$version-source.tar.gz" "$release/SHA256SUMS" "$release/build-metadata.json" _output/ci-macos-release/
+          files=("Cage-$version-macos-$BUILD_ARCH.dmg" "mihomo-$source_version-source.tar.gz" SHA256SUMS build-metadata.json)
+          if [[ "$BUILD_ARCH" == arm64 ]]; then files+=("cage-macos-guest-$version-source.tar.gz"); fi
+          for file in "${files[@]}"; do cp "$release/$file" _output/ci-macos-release/; done
           (cd _output/ci-macos-release && shasum -a 256 --check SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
