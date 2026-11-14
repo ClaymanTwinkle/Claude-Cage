@@ -109,7 +109,7 @@ func TestControllerRestartAfterGracefulAndForcedExit(t *testing.T) {
 					}
 					time.Sleep(25 * time.Millisecond)
 				}
-				if err := c.waitForExit(); err != nil {
+				if err := c.waitForExit(context.Background()); err != nil {
 					t.Fatal(err)
 				}
 			}

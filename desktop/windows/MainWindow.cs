@@ -206,6 +206,22 @@ internal sealed class MainWindow : Form
         finally { retry.Enabled = true; }
     }
 
+    // Shutdown waits of the acceptance smoke. Each has its own budget so a
+    // slow step cannot consume a later step's time.
+    // prepare-update without --stop: prepareDesktopUpdateLimit() in
+    // internal/workbench/control_exit.go. The workload and the desktop
+    // gateway each take a ready wait (12 s + one 5 s request), handoff retries
+    // (3 s) and an exit wait that follows the controller's reported shutdown
+    // stages (at most 155 s of stage budgets + 10 s), with one 5 s gateway
+    // probe between them: 185 + 5 + 185 = 375 s. A Go test keeps this equal.
+    internal const int PrepareUpdateWorstCaseSeconds = 375;
+    // Starting cage.exe and reading its bounded JSON reply.
+    private const int BackendProcessOverheadSeconds = 15;
+    // After releasing its profile lock a controller only logs and returns.
+    private const int ControllerProcessExitSeconds = 15;
+    // WebView2 releases its browser processes asynchronously after Dispose.
+    private const int BrowserExitSeconds = 20;
+
     private async Task SmokeDeadline()
     {
         try { await Task.Delay(TimeSpan.FromSeconds(120), lifetime.Token); await CompleteSmoke(false, "工作台未在自检期限内确认就绪"); }
@@ -220,8 +236,6 @@ internal sealed class MainWindow : Form
         var pageURL = web.Source?.GetLeftPart(UriPartial.Path);
         var environment = web.CoreWebView2?.Environment;
         var webviewVersion = environment?.BrowserVersionString;
-        using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-        shutdown.CancelAfter(TimeSpan.FromSeconds(20));
         var errors = new List<string>();
         int? prepareExit = null;
         string? prepareStatus = null;
@@ -244,7 +258,8 @@ internal sealed class MainWindow : Form
             try
             {
                 if (nativeBridgeReady) smokePhase = "stopping_backend";
-                var (exit, data) = await Backend.Json(["prepare-update", "--json"], shutdown.Token, TimeSpan.FromSeconds(20));
+                var (exit, data) = await Backend.Json(["prepare-update", "--json"], lifetime.Token,
+                    TimeSpan.FromSeconds(PrepareUpdateWorstCaseSeconds + BackendProcessOverheadSeconds));
                 prepareExit = exit;
                 prepareStatus = data.Text("status") is "prepared" or "stop_required" or "error" ? data.Text("status") : "unexpected";
                 // This report is uploaded by CI. Keep the shutdown error but
@@ -252,7 +267,9 @@ internal sealed class MainWindow : Form
                 prepareMessage = System.Text.RegularExpressions.Regex.Replace(data.Text("message"), @"[?#][^\s""'<>)]*", "[redacted]");
                 if (prepareMessage.Length > 768) prepareMessage = prepareMessage[..768];
                 if (exit != 0 || data.Text("status") != "prepared") throw new IOException("自检结束时无法确认后台已停止");
-                await Task.WhenAll(controllers.Select(process => process.WaitForExitAsync(shutdown.Token)));
+                using var processExit = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                processExit.CancelAfter(TimeSpan.FromSeconds(ControllerProcessExitSeconds));
+                await Task.WhenAll(controllers.Select(process => process.WaitForExitAsync(processExit.Token)));
             }
             finally { foreach (var process in controllers) process.Dispose(); }
         }
@@ -267,8 +284,10 @@ internal sealed class MainWindow : Form
             try
             {
                 if (nativeBridgeReady && errors.Count == 0) smokePhase = "stopping_browser";
+                using var browserExit = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                browserExit.CancelAfter(TimeSpan.FromSeconds(BrowserExitSeconds));
                 web.Dispose();
-                await exited.Task.WaitAsync(shutdown.Token);
+                await exited.Task.WaitAsync(browserExit.Token);
             }
             catch (Exception error) { errors.Add("自检浏览器尚未退出：" + error.Message); }
             finally { environment.BrowserProcessExited -= BrowserExited; }

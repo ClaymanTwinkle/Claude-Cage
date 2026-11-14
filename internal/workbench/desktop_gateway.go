@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/remotehost"
@@ -265,7 +264,7 @@ func (d *desktopGateway) discard(t *desktopTarget) {
 	if owner, ok := d.local.(interface {
 		ReleaseUnused(context.Context, *remotehost.Session) error
 	}); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), releaseUnusedTimeout)
 		defer cancel()
 		if err := owner.ReleaseUnused(ctx, t.session); err != nil {
 			diagnostics.Log("warn", "controller", "取消本机候选后未能确认空闲服务已释放")
@@ -457,7 +456,7 @@ func (d *desktopGateway) close() {
 	d.closed = true
 	d.mu.Unlock()
 	if t := d.active; t != nil && t.mode == "local" && t.state().State == "connected" {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), localViewSuspendTimeout)
 		_ = suspendLocalView(ctx, t)
 		cancel()
 	}

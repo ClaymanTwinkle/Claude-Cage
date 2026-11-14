@@ -104,6 +104,8 @@ func (s *Server) handoffWithVMOwnerLocked(w http.ResponseWriter, permittedOwner 
 		http.Error(w, "代理尚未停止，未继续后台更新。", http.StatusConflict)
 		return
 	}
+	// The launcher starts waiting as soon as it reads the acknowledgement.
+	s.exit.begin("handoff")
 	// A fixed length keeps the complete acknowledgement readable even if
 	// cancellation prevents net/http from writing a final chunk afterwards.
 	w.Header().Set("Content-Type", "application/json")

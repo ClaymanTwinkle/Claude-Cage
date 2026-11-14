@@ -74,6 +74,7 @@ type Server struct {
 	storageRecoveryError                             string
 	closing                                          bool
 	shutdown                                         func()
+	exit                                             *exitProgress
 	claudeAccounts                                   claudeAccountManager
 	favoritesMu                                      sync.Mutex
 	diagnosticMu                                     sync.Mutex
@@ -163,13 +164,29 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	exit := newExitProgress(profile)
+	locked := false
+	// Runs after every other deferred shutdown step. Unlock explicitly before
+	// closing: Windows releases locks of a closed handle only eventually.
+	defer func() {
+		exit.stage(exitStageRelease)
+		exit.stop()
+		var unlockErr error
+		if locked {
+			unlockErr = unlockController(lock)
+		}
+		_ = lock.Close()
+		exit.released(unlockErr)
+	}()
 	if err = lockControllerForStart(lock); err != nil {
 		if controllerLockContended(err) {
 			return errors.New("此配置已有工作台服务正在运行")
 		}
 		return fmt.Errorf("无法锁定工作台控制文件: %w", err)
 	}
+	locked = true
+	// A previous controller's progress record is meaningless once it released this lock.
+	_ = os.Remove(controllerExitRecordPath(profile))
 	if err := host.ProtectFile(lock.Name()); err != nil {
 		return err
 	}
@@ -194,6 +211,8 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	defer listener.Close()
 	s := &Server{profile: profile, configPath: configPath, exe: exe, clientOnly: clientOnly, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard(), AutoTimezone: true, AutoLanguage: true, BalancedDisplay: true}}
 	s.desktopEntry = fullConfigPath != ""
+	s.exit = exit
+	exit.bind(os.Getpid(), s.token)
 	workload := !s.desktopEntry && !clientOnly
 	if s.desktopEntry {
 		if err = importDesktopConnections(filepath.Dir(fullConfigPath), profile); err != nil {
@@ -204,7 +223,10 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 		s.remote = newRemoteGateway(profile)
 		s.remote.clientOnly = clientOnly
 	}
-	defer s.remote.close()
+	defer func() {
+		s.exit.stage(exitStageRemote)
+		s.remote.close()
+	}()
 	if workload {
 		if err = guestos.RecoverWindowsStorage(context.Background(), profile); err != nil {
 			s.failStorageRecovery(err)
@@ -237,7 +259,10 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 		if err != nil {
 			return err
 		}
-		defer s.account.lock()
+		defer func() {
+			s.exit.stage(exitStageRemote)
+			s.account.lock()
+		}()
 		defer func() { returned = errors.Join(returned, s.closeService()) }()
 		if b, e := os.ReadFile(filepath.Join(profile, "workbench.json")); e == nil {
 			// Existing profiles without this field used manual language settings.
@@ -277,7 +302,10 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 		if err = s.restorePhone(); err != nil {
 			s.phones.status = "无法恢复手机配对，请移除旧记录后重试"
 		}
-		defer s.stopPhone()
+		defer func() {
+			s.exit.stage(exitStagePhone)
+			s.stopPhone()
+		}()
 	}
 	s.identity, err = currentController()
 	if err != nil {
@@ -299,8 +327,11 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	s.shutdown = func() {
 		shutdownOnce.Do(func() {
 			defer close(shutdownDone)
+			// Handoff handlers begin before acknowledging; signals and a
+			// departed desktop window begin here.
+			s.exit.begin("shutdown")
 			s.beginClose()
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), httpShutdownGrace)
 			defer cancel()
 			_ = server.Shutdown(ctx)
 			_ = server.Close()
@@ -316,6 +347,7 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	go func() {
 		select {
 		case <-signals.Done():
+			s.exit.begin("signal")
 			s.shutdown()
 		case <-serveDone:
 		}

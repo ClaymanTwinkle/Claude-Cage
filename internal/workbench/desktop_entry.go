@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os"
@@ -156,6 +157,7 @@ func (s *Server) watchDesktopOwners(done <-chan struct{}) {
 			}
 			s.mu.Unlock()
 			if exit {
+				s.exit.begin("desktop window exited")
 				s.shutdown()
 				return
 			}
@@ -167,6 +169,7 @@ func (s *Server) handoffEntry(w http.ResponseWriter, r *http.Request) {
 	if !s.launcherAuthenticated(w, r) {
 		return
 	}
+	s.exit.begin("handoff")
 	jsonReply(w, map[string]bool{"stopping": true})
 	_ = http.NewResponseController(w).Flush()
 	go s.shutdown()
@@ -180,7 +183,7 @@ func (c *controllerClient) releaseDesktopEntry() error {
 	if err != nil || status != http.StatusOK {
 		return errors.New("桌面连接服务未能退出")
 	}
-	return c.waitForExit()
+	return c.waitForExit(context.Background())
 }
 
 // Inspect/stop the actual local workload before replacing the installed
