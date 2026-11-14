@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ "$(uname -s)" != Darwin ]]; then echo 'Cage.app must be built on macOS.' >&2; exit 1; fi
 case "${1:-}" in ''|--install|--macos-trial|--install-macos-trial) ;; *) echo 'Usage: scripts/build-app.sh [--install|--macos-trial|--install-macos-trial]' >&2; exit 2 ;; esac
-bundle_id=io.github.lee-xeo.claude-cage
+bundle_id=com.claymantwinkle.cage
 app_name=Cage
 if [[ "${1:-}" == *macos-trial ]]; then
   bundle_id+=.macos-trial

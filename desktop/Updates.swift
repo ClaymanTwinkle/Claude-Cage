@@ -3,7 +3,7 @@ import CryptoKit
 import Security
 import Darwin
 
-let cageUpdateBundleID = "io.github.lee-xeo.claude-cage"
+let cageUpdateBundleID = "com.claymantwinkle.cage"
 
 enum CageProfile {
     static var clientOnly: Bool { Bundle.main.object(forInfoDictionaryKey: "CageClientOnly") as? Bool == true }
