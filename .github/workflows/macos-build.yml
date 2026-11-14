@@ -27,7 +27,9 @@ jobs:
   checks:
     # macos-15 is arm64 and macos-15-intel is x86_64. Nested VMs are not available here.
     runs-on: ${{ inputs.arch == 'amd64' && 'macos-15-intel' || 'macos-15' }}
-    timeout-minutes: 45
+    # macos-15-intel runs the same build and suite about 3-4x slower
+    # (build ~17 min, Go tests ~25 min, against ~4 and ~8 on arm64).
+    timeout-minutes: ${{ inputs.arch == 'amd64' && 90 || 45 }}
     defaults:
       run:
         shell: bash
@@ -144,7 +146,7 @@ jobs:
     needs: checks
     runs-on: ${{ inputs.arch == 'amd64' && 'macos-15-intel' || 'macos-15' }}
     environment: cage-release
-    timeout-minutes: 75
+    timeout-minutes: ${{ inputs.arch == 'amd64' && 150 || 75 }}
     defaults:
       run:
         shell: bash
