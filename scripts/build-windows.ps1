@@ -153,7 +153,7 @@ try {
     $runtimePacks = @($resolvedAssets.project.frameworks.PSObject.Properties.Value.downloadDependencies |
         Where-Object { $_.name -in @('Microsoft.NETCore.App.Runtime.win-x64', 'Microsoft.WindowsDesktop.App.Runtime.win-x64') })
     if ($runtimePacks.Count -ne 2 -or @($runtimePacks | Where-Object { $_.version -ne "[$runtimeVersion, $runtimeVersion]" }).Count -ne 0) {
-        throw 'Resolved .NET runtime differs from packaging/windows/dependencies.json. Use SDK 10.0.403 or review and update the runtime pin.'
+        throw 'Resolved .NET runtime differs from packaging/windows/dependencies.json. Use the SDK pinned in global.json or review and update the runtime pin.'
     }
     $webviewVersion = ((Get-Content -LiteralPath 'desktop/windows/packages.lock.json' -Raw | ConvertFrom-Json).dependencies.PSObject.Properties.Value |
         ForEach-Object { $_.PSObject.Properties } | Where-Object { $_.Name -eq 'Microsoft.Web.WebView2' } | Select-Object -First 1).Value.resolved

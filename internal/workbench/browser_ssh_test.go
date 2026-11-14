@@ -49,19 +49,27 @@ func TestBrowserUsesInstanceSSHWithHostPortOccupied(t *testing.T) {
 	config := &ssh.ServerConfig{NoClientAuth: true}
 	config.AddHostKey(signer)
 	var connections atomic.Int32
+	// Phase times separate a slow OpenSSH start from a stalled handshake if
+	// the request deadline expires on a CI runner.
+	began := time.Now()
+	var accepted, handshaken atomic.Int64
+	var handshakeErr atomic.Pointer[error]
 	go func() {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
+			accepted.CompareAndSwap(0, int64(time.Since(began)))
 			go func() {
 				server, channels, requests, err := ssh.NewServerConn(conn, config)
 				if err != nil {
+					handshakeErr.CompareAndSwap(nil, &err)
 					conn.Close()
 					return
 				}
 				defer server.Close()
+				handshaken.CompareAndSwap(0, int64(time.Since(began)))
 				connections.Add(1)
 				go ssh.DiscardRequests(requests)
 				for incoming := range channels {
@@ -112,9 +120,15 @@ func TestBrowserUsesInstanceSSHWithHostPortOccupied(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	requested := time.Since(began)
 	data, err := client.request(ctx, "isolated-test-token", http.MethodGet, "/tabs", nil)
 	if err != nil || string(data) != `{"ok":true}` || connections.Load() == 0 || leaked.Load() {
-		t.Fatalf("browser did not use instance SSH: data=%q err=%v SSH=%d host-port-contacted=%t", data, err, connections.Load(), leaked.Load())
+		var failure error
+		if p := handshakeErr.Load(); p != nil {
+			failure = *p
+		}
+		t.Fatalf("browser did not use instance SSH: data=%q err=%v SSH=%d host-port-contacted=%t; since setup: request=%v tcp-accept=%v handshake=%v (0=never) handshake-error=%v",
+			data, err, connections.Load(), leaked.Load(), requested, time.Duration(accepted.Load()), time.Duration(handshaken.Load()), failure)
 	}
 	body, err := client.events(ctx, "isolated-test-token")
 	if err != nil {
