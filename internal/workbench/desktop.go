@@ -56,7 +56,7 @@ func openController(profile string) (*controllerClient, error) {
 		return nil, errors.New("后台记录无效，请保留现有环境并检查私有配置。")
 	}
 	jar, _ := cookiejar.New(nil)
-	c := &controllerClient{profile: profile, record: record, origin: fmt.Sprintf("http://localhost:%d", record.Port), client: &http.Client{Timeout: 5 * time.Second, Jar: jar, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}}
+	c := &controllerClient{profile: profile, record: record, origin: fmt.Sprintf("http://localhost:%d", record.Port), client: &http.Client{Timeout: controllerRequestTimeout, Jar: jar, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}}
 	return c, nil
 }
 
@@ -188,7 +188,7 @@ func desktopLaunch(profile string, gateway bool, options DesktopOptions, start f
 	if err != nil {
 		return DesktopResult{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controllerReadyTimeout)
 	defer cancel()
 	current, err := waitControllerReady(ctx, profile)
 	if err == nil {
@@ -222,7 +222,7 @@ func desktopLaunch(profile string, gateway bool, options DesktopOptions, start f
 			if status != http.StatusOK {
 				return pendingUpdate(current), nil
 			}
-			if err = current.waitForExit(); err != nil {
+			if err = current.waitForExit(context.Background()); err != nil {
 				return DesktopResult{}, err
 			}
 		}
@@ -255,7 +255,7 @@ func PrepareUpdate(configPath string, stop bool) (DesktopResult, error) {
 	// A closing controller stops accepting requests before releasing its lock.
 	// Use the same bounded retirement wait as desktop startup; the lock and VM
 	// checks below still decide whether replacing the application is safe.
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), controllerReadyTimeout)
 	defer cancel()
 	c, err := waitControllerReady(ctx, filepath.Dir(configPath))
 	if errors.Is(err, errControllerUnavailable) {
@@ -287,7 +287,7 @@ func PrepareUpdate(configPath string, stop bool) (DesktopResult, error) {
 	if c.launch.Controller.Protocol == controlProtocol {
 		// Routine status probes also hold the operation lock. Retry briefly.
 		// every request still checks running jobs, terminals and VM ownership.
-		handoffCtx, cancelHandoff := context.WithTimeout(ctx, 3*time.Second)
+		handoffCtx, cancelHandoff := context.WithTimeout(ctx, handoffConflictWindow)
 		defer cancelHandoff()
 		conflicted := false
 	handoff:
@@ -300,7 +300,8 @@ func PrepareUpdate(configPath string, stop bool) (DesktopResult, error) {
 				return DesktopResult{}, err
 			}
 			if status == http.StatusOK {
-				if err = c.waitForExit(); err != nil {
+				// The ready budget above must not cut this wait short.
+				if err = c.waitForExit(context.Background()); err != nil {
 					return DesktopResult{}, err
 				}
 				return DesktopResult{Status: "prepared"}, nil
@@ -354,7 +355,7 @@ func (c *controllerClient) stopAndHandoff() error {
 			if err != nil || status != http.StatusOK {
 				return errors.New("本地连接服务尚未退出，请稍后重试")
 			}
-			return c.waitForExit()
+			return c.waitForExit(context.Background())
 		}
 	} else if !legacy && !c.launch.DesktopGateway && !c.launch.ClientOnly &&
 		c.launch.ConfigPath != "" && filepath.Dir(c.launch.ConfigPath) == filepath.Clean(c.profile) &&
@@ -437,22 +438,7 @@ func (c *controllerClient) stopAndHandoff() error {
 			return errors.New("后台仍在执行工作，未继续更新。请保存并停止后重试。")
 		}
 	}
-	return c.waitForExit()
-}
-func (c *controllerClient) waitForExit() error {
-	f, err := openControllerLock(c.profile, os.O_RDWR)
-	if err != nil {
-		return errors.New("无法确认后台已退出，未继续更新。")
-	}
-	defer f.Close()
-	for i := 0; i < 100; i++ {
-		if lockController(f) == nil {
-			_ = unlockController(f)
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return errors.New("后台尚未退出，未强制结束进程。请稍后重试更新。")
+	return c.waitForExit(context.Background())
 }
 func startController(configPath string) error {
 	exe, err := os.Executable()

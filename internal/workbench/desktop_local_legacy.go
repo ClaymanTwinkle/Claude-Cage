@@ -71,7 +71,7 @@ func (d *desktopLocal) handoffOldLocal(ctx context.Context) (bool, error) {
 	if err != nil || status != http.StatusOK || !ack.Stopping {
 		return false, errors.New("旧版本机后台仍在使用，或尚未确认空闲退出。" + previousLocalWorkbench)
 	}
-	if err := c.waitForExit(); err != nil {
+	if err := c.waitForExit(ctx); err != nil {
 		return false, err
 	}
 	return true, nil

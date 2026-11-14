@@ -266,7 +266,7 @@ func (d *desktopLocal) ReleaseUnused(ctx context.Context, session *remotehost.Se
 // The process started for a cancelled handshake may publish its record after
 // cancellation. Only hand off a controller bearing this launcher's own nonce.
 func (d *desktopLocal) releaseFailedLaunch(id string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), failedLaunchReleaseTimeout)
 	defer cancel()
 	for ctx.Err() == nil {
 		c, err := openController(d.profile)
@@ -362,7 +362,7 @@ func (d *desktopLocal) Release(ctx context.Context, expected DesktopLocalStatus,
 			break
 		}
 	}
-	if err = c.waitForExit(); err != nil {
+	if err = c.waitForExit(ctx); err != nil {
 		return err
 	}
 	for processExists(c.record.PID) {

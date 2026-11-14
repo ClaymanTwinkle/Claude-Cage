@@ -101,7 +101,9 @@ func (s *Server) beginClose() {
 // before it can finish and release its resources.
 func (s *Server) closeBackground() {
 	s.beginClose()
+	s.exit.stage(exitStageJobs)
 	s.jobs.close()
+	s.exit.stage(exitStageMonitors)
 	s.monitors.Wait()
 }
 
@@ -128,11 +130,15 @@ func (s *Server) closeService() error {
 		s.beginClose()
 		// Closing PTYs first releases handlers blocked writing terminal input.
 		// The manager also rejects a terminal created by an already-admitted call.
+		s.exit.stage(exitStageTerminals)
 		s.terminals.close()
 		s.closeBackground()
+		s.exit.stage(exitStageActivities)
 		s.activities.Wait()
+		s.exit.stage(exitStageOperation)
 		s.op.Lock()
 		defer s.op.Unlock()
+		s.exit.stage(exitStageResources)
 		s.closeProjectShares()
 		s.closeWindowsBrowser()
 		if s.windowsGuest != nil {

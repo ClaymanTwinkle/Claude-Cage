@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -179,6 +180,26 @@ func testServeShutdownHandoff(t *testing.T, saved string, timezone, language, ba
 		t.Fatalf("control service did not release its profile lock: %v", err)
 	}
 	defer unlockController(lock)
+	// The handoff published its progress and logged every stage, in order,
+	// ending with the lock release.
+	progress, ok := readControllerExitRecord(profile, record.PID, controllerExitOwner(record.Token))
+	if !ok || progress.Stage != exitStageRelease || progress.Reason != "handoff" {
+		t.Fatalf("shutdown progress record: %+v %v", progress, ok)
+	}
+	var events strings.Builder
+	files, _ := filepath.Glob(filepath.Join(profile, "logs", "events-*.jsonl"))
+	for _, file := range append(files, filepath.Join(profile, "logs", "events.jsonl")) {
+		b, _ := os.ReadFile(file)
+		events.Write(b)
+	}
+	log := events.String()
+	for _, want := range []string{"shutdown started: handoff", "entering phone", "entering terminals", "entering jobs", "entering monitors", "entering activities", "entering operation", "entering resources", "entering remote", "entering release", "controller lock released"} {
+		i := strings.Index(log, want)
+		if i < 0 {
+			t.Fatalf("shutdown log lacks %q:\n%s", want, log)
+		}
+		log = log[i+len(want):]
+	}
 	if _, err := os.Stat(filepath.Join(profile, "state", "lima")); !os.IsNotExist(err) {
 		t.Fatalf("idle control service unexpectedly created VM state: %v", err)
 	}

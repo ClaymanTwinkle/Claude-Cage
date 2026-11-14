@@ -90,6 +90,32 @@ function Wait-WindowsWorkbenchFiles {
     }
 }
 
+# prepare-update without --stop may take prepareDesktopUpdateLimit() in
+# internal/workbench/control_exit.go; Cage.exe uses the same value
+# (MainWindow.cs PrepareUpdateWorstCaseSeconds). A Go test keeps all three equal.
+$script:PrepareUpdateWorstCaseSeconds = 375
+# Starting cage.exe and reading its JSON reply (MainWindow.cs).
+$script:BackendProcessOverheadSeconds = 15
+
+function Invoke-SmokeBackend {
+    param([Parameter(Mandatory)][string]$AppDirectory, [Parameter(Mandatory)][string]$TestRoot,
+        [Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][int]$TimeoutSeconds)
+    $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $AppDirectory 'resources/cage.exe'))
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.Environment['CLAUDE_CAGE_CONFIG'] = Join-Path $TestRoot 'profile/config.json'
+    foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+    $process = [Diagnostics.Process]::Start($start)
+    try {
+        $null = $process.StandardOutput.ReadToEndAsync()
+        $null = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) { $process.Kill($true); $process.WaitForExit() }
+        return $process.ExitCode
+    } finally { $process.Dispose() }
+}
+
 function Assert-WindowsWorkbench {
     param([Parameter(Mandatory)][string]$AppDirectory)
     if (-not $IsWindows) { throw 'Workbench acceptance requires Windows.' }
@@ -102,10 +128,14 @@ function Assert-WindowsWorkbench {
     $start.Environment['CLAUDE_CAGE_CONFIG'] = Join-Path $testRoot 'profile/config.json'
     $start.ArgumentList.Add('--smoke-test')
     $start.ArgumentList.Add($report)
+    # Cage.exe: 120 s readiness deadline, prepare-update, 15 s controller
+    # process exit and 20 s browser exit (MainWindow.cs), plus 30 s margin.
+    $prepareSeconds = $script:PrepareUpdateWorstCaseSeconds + $script:BackendProcessOverheadSeconds
+    $windowSeconds = 120 + $prepareSeconds + 15 + 20 + 30
     $window = [Diagnostics.Process]::Start($start)
     $passed = $false
     try {
-        if (-not $window.WaitForExit(180000)) { throw "Cage workbench acceptance timed out. Diagnostics retained at $testRoot" }
+        if (-not $window.WaitForExit($windowSeconds * 1000)) { throw "Cage workbench acceptance timed out. Diagnostics retained at $testRoot" }
         Assert-WindowsWorkbenchReport -ExitCode $window.ExitCode -Report $report
         Wait-WindowsWorkbenchFiles -AppDirectory $AppDirectory
         $passed = $true
@@ -116,21 +146,18 @@ function Assert-WindowsWorkbench {
             # Close only this test's authenticated controller. Killing every
             # cage.exe could terminate another installed application or VM.
             try {
-                $cleanup = [Diagnostics.ProcessStartInfo]::new((Join-Path $AppDirectory 'resources/cage.exe'))
-                $cleanup.UseShellExecute = $false
-                $cleanup.CreateNoWindow = $true
-                $cleanup.RedirectStandardOutput = $true
-                $cleanup.RedirectStandardError = $true
-                $cleanup.Environment['CLAUDE_CAGE_CONFIG'] = Join-Path $testRoot 'profile/config.json'
-                $cleanup.ArgumentList.Add('prepare-update'); $cleanup.ArgumentList.Add('--json')
-                $controller = [Diagnostics.Process]::Start($cleanup)
-                try {
-                    $stdout = $controller.StandardOutput.ReadToEndAsync()
-                    $stderr = $controller.StandardError.ReadToEndAsync()
-                    if (-not $controller.WaitForExit(20000)) { $controller.Kill($true); $controller.WaitForExit() }
-                    if ($controller.ExitCode -ne 0) { Write-Warning 'The isolated smoke controller did not confirm shutdown; its profile is retained.' }
-                } finally { $controller.Dispose() }
+                if ((Invoke-SmokeBackend -AppDirectory $AppDirectory -TestRoot $testRoot -Arguments @('prepare-update', '--json') -TimeoutSeconds $prepareSeconds) -ne 0) {
+                    Write-Warning 'The isolated smoke controller did not confirm shutdown; its profile is retained.'
+                }
             } catch { Write-Warning "Isolated smoke cleanup failed: $($_.Exception.Message)" }
+            # The product's own export redacts its logs and merges the
+            # desktop-entry logs; CI uploads only this bundle, never the profile.
+            try {
+                $bundle = Join-Path $testRoot 'cage-diagnostics.zip'
+                if ((Invoke-SmokeBackend -AppDirectory $AppDirectory -TestRoot $testRoot -Arguments @('diagnostics', '--json', $bundle) -TimeoutSeconds 90) -ne 0) {
+                    Write-Warning 'The isolated smoke diagnostics could not be exported.'
+                }
+            } catch { Write-Warning "Isolated smoke diagnostics export failed: $($_.Exception.Message)" }
         }
         # A successful smoke report is written only after the isolated backend
         # confirms shutdown. Failed profiles remain available for diagnosis.
