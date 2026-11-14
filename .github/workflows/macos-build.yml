@@ -172,6 +172,13 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: ui/package-lock.json
+      # Same build prerequisites as the checks job: the UI build runs uv
+      # (ui/scripts/prepare-vnc.mjs) and the macOS guest kit compiles SSHFS.
+      - uses: astral-sh/setup-uv@v10.3.3
+      - name: Install SSHFS build dependencies
+        run: |
+          brew install glib gettext pcre2
+          brew upgrade glib gettext pcre2
       - name: Build, sign, notarize and verify using a temporary keychain
         env:
           CAGE_MACOS_P12_BASE64: ${{ secrets.CAGE_MACOS_P12_BASE64 }}

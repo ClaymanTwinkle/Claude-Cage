@@ -67,7 +67,10 @@ jobs:
       artifact_name: cage-macos-amd64-signed
 
   publish:
+    # macOS 签名任务失败（例如苹果公证超时）不阻塞其他平台：只要 CI 测试包可取，
+    # 就发布 Windows / Linux / Android，以及已成功签名公证的 macOS 包。
     needs: [source, macos, macos-intel]
+    if: ${{ always() && needs.source.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -77,11 +80,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           CI_RUN: ${{ needs.source.outputs.run_id }}
+          MACOS_ARM64: ${{ needs.macos.result }}
+          MACOS_AMD64: ${{ needs.macos-intel.result }}
         run: |
           set -euo pipefail
           mkdir -p dl out
-          gh run download "$GITHUB_RUN_ID" -R "$REPO" -n cage-macos-arm64-signed -D dl/macos
-          gh run download "$GITHUB_RUN_ID" -R "$REPO" -n cage-macos-amd64-signed -D dl/macos-intel
+          : > missing-macos.txt
+          if [[ "$MACOS_ARM64" == success ]]; then
+            gh run download "$GITHUB_RUN_ID" -R "$REPO" -n cage-macos-arm64-signed -D dl/macos
+          else
+            echo "macOS Apple Silicon（macos-arm64）" >> missing-macos.txt
+          fi
+          if [[ "$MACOS_AMD64" == success ]]; then
+            gh run download "$GITHUB_RUN_ID" -R "$REPO" -n cage-macos-amd64-signed -D dl/macos-intel
+          else
+            echo "macOS Intel（macos-amd64）" >> missing-macos.txt
+          fi
           for name in cage-linux-amd64-test cage-mobile-test-android-arm64; do
             gh run download "$CI_RUN" -R "$REPO" -n "$name" -D "dl/$name"
           done
@@ -94,7 +108,10 @@ jobs:
             while IFS= read -r -d '' f; do
               [[ -e "out/${f##*/}" ]] || cp "$f" out/
             done
-          for pattern in '*-macos-arm64.dmg' '*-macos-amd64.dmg' '*-setup*.exe' '*.deb' '*.apk'; do
+          required=('*-setup*.exe' '*.deb' '*.apk')
+          [[ "$MACOS_ARM64" != success ]] || required+=('*-macos-arm64.dmg')
+          [[ "$MACOS_AMD64" != success ]] || required+=('*-macos-amd64.dmg')
+          for pattern in "${required[@]}"; do
             compgen -G "out/$pattern" > /dev/null || { echo "缺少安装包：$pattern" >&2; exit 1; }
           done
           (cd out && sha256sum -- * > SHA256SUMS)
@@ -107,8 +124,15 @@ jobs:
           CI_RUN: ${{ needs.source.outputs.run_id }}
         run: |
           set -euo pipefail
+          missing=$(awk 'NF { printf "%s%s", (n++ ? "、" : ""), $0 }' missing-macos.txt)
+          warning=""
+          if [[ -n "$missing" ]]; then
+            warning="> ⚠️ 本次缺少 ${missing}：签名或苹果公证未在时限内完成，详见 https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID} 。"
+          fi
           notes=$(printf '%s\n' \
             "fork 自动构建，源码提交 ${SHA}，来自 CI 运行 https://github.com/${REPO}/actions/runs/${CI_RUN}" \
+            "" \
+            "$warning" \
             "" \
             "- macOS：fork 的 Developer ID 签名并经苹果公证，可直接打开。macos-arm64 为 Apple Silicon 版；macos-amd64 为 Intel 版，仅支持 Linux 客机" \
             "- Windows / Linux / Android：CI 测试包，Windows 安装包未签名" \
