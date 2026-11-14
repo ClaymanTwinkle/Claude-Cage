@@ -105,3 +105,19 @@ jobs:
       ref: ${{ github.sha }}
       release: false
       artifact_name: cage-linux-amd64-test
+  mobile:
+    needs: workflow-checks
+    uses: ./.github/workflows/mobile-build.yml
+    with:
+      ref: ${{ github.sha }}
+      artifact_prefix: cage-mobile-test
+      testflight: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+    secrets:
+      CAGE_ANDROID_DEV_KEYSTORE_BASE64: ${{ secrets.CAGE_ANDROID_DEV_KEYSTORE_BASE64 }}
+      CAGE_ANDROID_DEV_KEY_ALIAS: ${{ secrets.CAGE_ANDROID_DEV_KEY_ALIAS }}
+      CAGE_ANDROID_DEV_PASSWORD: ${{ secrets.CAGE_ANDROID_DEV_PASSWORD }}
+      CAGE_ASC_KEY_P8: ${{ secrets.CAGE_ASC_KEY_P8 }}
+      CAGE_ASC_KEY_ID: ${{ secrets.CAGE_ASC_KEY_ID }}
+      CAGE_ASC_ISSUER_ID: ${{ secrets.CAGE_ASC_ISSUER_ID }}
+      CAGE_IOS_TEAM_ID: ${{ secrets.CAGE_IOS_TEAM_ID }}
+      CAGE_IOS_APP_ID: ${{ secrets.CAGE_IOS_APP_ID }}
