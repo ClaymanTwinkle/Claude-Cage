@@ -118,6 +118,9 @@ type Settings struct {
 	Locale          string          `json:"locale"`
 	BrowserLanguage string          `json:"browser_language"`
 	ExitPolicy      cage.ExitPolicy `json:"exit_policy"`
+	// DefaultRelay is the relay built into this binary, shown read-only; ""
+	// means pairing needs mobile_relay. Ignored when settings are saved.
+	DefaultRelay string `json:"default_relay,omitempty"`
 }
 type Location struct {
 	IP                       string    `json:"ip"`
@@ -165,12 +168,16 @@ func writePrivate(path string, v any) error {
 	return os.Rename(f.Name(), path)
 }
 func settingsView(c cage.Config, p Preferences) Settings {
-	if p.MobileRelay == mobilelink.OfficialRelay {
+	if mobilelink.HasDefaultRelay() && p.MobileRelay == mobilelink.DefaultRelay {
 		p.MobileRelay = ""
 	}
 	p.BrowserHomeURL = browserHomeURL(p)
 	p.ClaudeTerminalCommand = claudeTerminalCommand(p)
-	return Settings{Preferences: p, DNSURL: c.DNSURL, Timezone: c.Timezone, Locale: c.Locale, BrowserLanguage: c.BrowserLanguage, ExitPolicy: c.ExitPolicy.Normalized()}
+	defaultRelay := ""
+	if mobilelink.HasDefaultRelay() {
+		defaultRelay = mobilelink.DefaultRelay
+	}
+	return Settings{Preferences: p, DefaultRelay: defaultRelay, DNSURL: c.DNSURL, Timezone: c.Timezone, Locale: c.Locale, BrowserLanguage: c.BrowserLanguage, ExitPolicy: c.ExitPolicy.Normalized()}
 }
 func proposedSettings(input Settings, old cage.Config, profile string) (cage.Config, Preferences, error) {
 	if input.ExitPolicy == (cage.ExitPolicy{}) {

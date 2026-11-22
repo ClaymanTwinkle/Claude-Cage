@@ -53,7 +53,7 @@ func profileRelay(config string) (string, error) {
 	}
 	b, err := os.ReadFile(filepath.Join(filepath.Dir(config), "workbench.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return mobilelink.OfficialRelay, nil
+		return mobilelink.ResolveRelay("")
 	}
 	if err != nil {
 		return "", err
@@ -62,7 +62,7 @@ func profileRelay(config string) (string, error) {
 		return "", err
 	}
 	if prefs.MobileRelay == "" {
-		return mobilelink.OfficialRelay, nil
+		return mobilelink.ResolveRelay("")
 	}
 	if !strings.HasPrefix(prefs.MobileRelay, "https://") || !mobilelink.ValidRelayOrigin(prefs.MobileRelay) {
 		return "", errors.New("invalid mobile relay in Cage settings")
@@ -100,7 +100,7 @@ func run(ctx context.Context, args []string, out, errs io.Writer) error {
 		f.StringVar(&cageBinary, "cage-bin", "", "absolute path to trusted cage binary")
 		f.StringVar(&config, "config", "", "absolute path to the running Cage profile configuration")
 	case "client":
-		f.StringVar(&base, "relay", mobilelink.OfficialRelay, "trusted relay HTTPS origin")
+		f.StringVar(&base, "relay", mobilelink.DefaultRelay, "trusted relay HTTPS origin (defaults to the build's relay, if any)")
 		f.StringVar(&invitation, "invitation-file", "", "private invitation supplied by the host")
 		f.StringVar(&connectionFile, "connection-file", "", "private saved connection file verified on this device")
 		f.StringVar(&webDir, "web-dir", "", "trusted build directory containing mobile.html")

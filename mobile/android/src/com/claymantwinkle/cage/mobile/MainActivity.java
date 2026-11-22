@@ -102,7 +102,7 @@ public final class MainActivity extends Activity {
         return customRelay.isChecked() ? Invitation.relay(relayField.getText().toString()) : Cagemobile.defaultRelay();
     }
     private void displayRelay(String value) {
-        boolean custom = !Cagemobile.defaultRelay().equals(value);
+        boolean custom = !value.isEmpty() && !Cagemobile.defaultRelay().equals(value);
         customRelay.setChecked(custom);
         relayField.setText(custom ? value : "");
         relayField.setVisibility(custom ? View.VISIBLE : View.GONE);
@@ -487,7 +487,7 @@ public final class MainActivity extends Activity {
         });
         displayRelay(imported != null && host ? imported.relay : preferredRelay());
         if (!host) {
-            label("关闭自建中继后，使用 Cage 官方中继。", 14);
+            label(Cagemobile.defaultRelay().isEmpty() ? "关闭自建中继后，配对时使用电脑配对码中的中继。" : "关闭自建中继后，使用内置默认中继。", 14);
             button(form, "保存中继设置", true, v -> {
                 try { rememberRelay(selectedRelay()); status.setText("中继设置已保存。"); }
                 catch (Exception e) { status.setText("请填写有效的 HTTPS 地址。"); }

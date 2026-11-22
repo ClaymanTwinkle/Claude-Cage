@@ -76,7 +76,7 @@ try {
     $env:GOARCH = 'amd64'
     $env:GOOS = 'windows'
     $tags = 'external_hcs,external_wsl2,yq_noxml,yq_nolua,yq_noini,yq_nohcl,yq_notoml,yq_noprops,yq_nocsv,yq_nouri,yq_nobase64,yq_nosh,yq_noshell'
-    $ldflags = "-s -w -X github.com/sylvinus/agent-vm/internal/version.Version=$version -X github.com/lima-vm/lima/v2/pkg/version.Version=$limaVersion"
+    $ldflags = "-s -w -X github.com/sylvinus/agent-vm/internal/version.Version=$version -X github.com/lima-vm/lima/v2/pkg/version.Version=$limaVersion -X github.com/sylvinus/agent-vm/internal/mobilelink.DefaultRelay=$env:CAGE_DEFAULT_RELAY"
     Invoke-BuildTool $go @('build', '-trimpath', '-tags', $tags, '-ldflags', $ldflags, '-o', (Join-Path $resources 'cage.exe'), './cmd/cage')
     Invoke-BuildTool (Join-Path $resources 'cage.exe') @('verify-vm-assets')
     Invoke-BuildTool (Join-Path $resources 'cage.exe') @('verify-web-assets')

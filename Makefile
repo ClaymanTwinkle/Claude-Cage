@@ -28,8 +28,12 @@ EXE := .exe
 endif
 
 ASSETS := internal/limaembed/assets
+# Optional built-in mobile relay (HTTPS origin). Empty: users set one in
+# Settings → Remote connection before pairing a phone.
+CAGE_DEFAULT_RELAY ?=
 LDFLAGS := -s -w \
 	-X github.com/sylvinus/agent-vm/internal/version.Version=$(VERSION) \
+	-X 'github.com/sylvinus/agent-vm/internal/mobilelink.DefaultRelay=$(CAGE_DEFAULT_RELAY)' \
 	-X github.com/lima-vm/lima/v2/pkg/version.Version=$(LIMA_VERSION)
 # yq only edits Lima's YAML here: without its other formats (Lua, HCL, TOML,
 # XML...), 10% smaller. Tests run with the same tags.

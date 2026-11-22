@@ -39,15 +39,16 @@ func NewPairCode(origin string, room relay.Invitation, host string) (PairCode, s
 		return PairCode{}, "", err
 	}
 	code := PairCode{Relay: origin, Room: room.ID, Token: room.ClientToken, Seed: seed, Host: host, Expires: room.ExpiresAt.Unix()}
-	if origin == OfficialRelay {
-		code.Relay = ""
-	}
+	// Codes always carry the relay so a phone built with a different (or no)
+	// default can still verify that it joins the same relay as the desktop.
 	b, err := json.Marshal(code)
 	return code, "CAGE1:" + string(b), err
 }
 func (p PairCode) origin() string {
 	if p.Relay == "" {
-		return OfficialRelay
+		// Codes from older desktops omitted the relay when it was the
+		// build default.
+		return DefaultRelay
 	}
 	return p.Relay
 }
@@ -106,6 +107,11 @@ func RedeemPair(ctx context.Context, raw, selectedRelay, phonePin string) (strin
 	}
 	if len(raw) > 4096 || !strings.HasPrefix(raw, "CAGE1:") || json.Unmarshal([]byte(raw[6:]), &p) != nil || !pairPin(phonePin) {
 		return "", errors.New("请扫描 Cage 电脑端的配对码")
+	}
+	if selectedRelay == "" {
+		// The code arrives over the same trusted channel as the host pin, so a
+		// phone without its own relay setting follows the desktop's relay.
+		selectedRelay = p.origin()
 	}
 	if p.origin() != selectedRelay || !ValidRelayOrigin(selectedRelay) {
 		return "", errors.New("中继与当前设置不符，请检查自建中继地址")

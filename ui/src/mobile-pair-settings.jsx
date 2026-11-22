@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useState } from "react";
 import { api, writeClipboard } from "./api";
 import { QrCode } from "lucide-react";
 
-export function MobilePairSettings({ relay, savedRelay, onChange, onConfirm }) {
-  const [custom, setCustom] = useState(Boolean(relay));
+export function MobilePairSettings({ relay, savedRelay, defaultRelay = "", onChange, onConfirm }) {
+  // Without a built-in relay the only choice is a self-hosted one.
+  const [customChoice, setCustom] = useState(Boolean(relay));
+  const custom = customChoice || !defaultRelay;
   const [token, setToken] = useState("");
   const [code, setCode] = useState(null);
   const [paired, setPaired] = useState(false);
@@ -175,35 +177,40 @@ export function MobilePairSettings({ relay, savedRelay, onChange, onConfirm }) {
           <div>
             <h4>中继服务</h4>
             <p className="field-help">
-              通过中继连接手机与电脑，可使用官方或自建服务。
+              {defaultRelay
+                ? "通过中继连接手机与电脑，可使用内置默认中继或自建服务。"
+                : "通过中继连接手机与电脑。此版本未内置中继，请填写自建中继的 HTTPS 地址并保存后再生成配对码。"}
             </p>
           </div>
-          <div
-            className="remote-relay-options"
-            role="group"
-            aria-label="中继服务"
-          >
-            <button
-              type="button"
-              aria-pressed={!custom}
-              onClick={() => {
-                setCustom(false);
-                setToken("");
-                onChange("");
-                setCode(null);
-              }}
+          {defaultRelay && (
+            <div
+              className="remote-relay-options"
+              role="group"
+              aria-label="中继服务"
             >
-              Cage 官方中继
-            </button>
-            <button
-              type="button"
-              aria-pressed={custom}
-              onClick={() => setCustom(true)}
-            >
-              自建中继
-            </button>
-          </div>
+              <button
+                type="button"
+                aria-pressed={!custom}
+                onClick={() => {
+                  setCustom(false);
+                  setToken("");
+                  onChange("");
+                  setCode(null);
+                }}
+              >
+                默认中继
+              </button>
+              <button
+                type="button"
+                aria-pressed={custom}
+                onClick={() => setCustom(true)}
+              >
+                自建中继
+              </button>
+            </div>
+          )}
         </div>
+        {!custom && <small>默认中继：{defaultRelay}</small>}
         {custom && (
           <>
             <label>

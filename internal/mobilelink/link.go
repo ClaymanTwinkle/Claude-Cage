@@ -23,7 +23,32 @@ import (
 	"golang.org/x/net/http2"
 )
 
-const OfficialRelay = "https://43.142.88.90"
+// DefaultRelay is the relay origin used when no relay is configured in the
+// desktop settings or on the phone. It is empty in source builds; a
+// distribution may inject one at build time:
+//
+//	-ldflags "-X github.com/sylvinus/agent-vm/internal/mobilelink.DefaultRelay=https://relay.example.com"
+//
+// The Makefile and build scripts pass CAGE_DEFAULT_RELAY through this flag.
+// With no default, pairing requires an explicitly configured relay.
+var DefaultRelay string
+
+// ErrNoRelay reports that neither a configured nor a built-in relay exists.
+var ErrNoRelay = errors.New("未配置中继地址，请在设置中填写中继服务的 HTTPS 地址")
+
+// HasDefaultRelay reports whether this build carries a usable default relay.
+func HasDefaultRelay() bool { return DefaultRelay != "" && ValidRelayOrigin(DefaultRelay) }
+
+// ResolveRelay returns configured when set, otherwise the build default.
+func ResolveRelay(configured string) (string, error) {
+	if configured != "" {
+		return configured, nil
+	}
+	if !HasDefaultRelay() {
+		return "", ErrNoRelay
+	}
+	return DefaultRelay, nil
+}
 
 func relayOrigin(base string) (*url.URL, error) {
 	u, err := url.Parse(base)

@@ -2,6 +2,9 @@
 set -euo pipefail
 mobile_dir="$(cd "$(dirname "$0")" && pwd)"
 cd "$mobile_dir"
+# Optional built-in relay (HTTPS origin). Empty: the phone follows the relay in
+# the desktop's pairing code, or the one entered in its relay settings.
+relay_ldflags="-X github.com/sylvinus/agent-vm/internal/mobilelink.DefaultRelay=${CAGE_DEFAULT_RELAY:-}"
 case "${1:-}" in
   android|ios) platform="$1" ;;
   android-release) platform=android ;;
@@ -56,7 +59,8 @@ if [[ "$platform" == ios ]]; then
   sips -z 1024 1024 ../ui/src/logo.png --out "$icon/Cage.png" >/dev/null
   # One arm64 iPhone slice and one simulator slice for this Mac.
   # Each platform framework is then passed to -create-xcframework exactly once.
-  (cd bindings && gomobile bind -target="ios/arm64,iossimulator/$(go env GOHOSTARCH)" -iosversion=17.0 -o "$mobile_dir/.build/ios/Cagemobile.xcframework" .)
+  (cd bindings && gomobile bind -target="ios/arm64,iossimulator/$(go env GOHOSTARCH)" -iosversion=17.0 \
+    -ldflags="$relay_ldflags" -o "$mobile_dir/.build/ios/Cagemobile.xcframework" .)
   if [[ "$1" == ios-testflight ]]; then
     # App Store versions are numeric only: 0.1.8-rc uploads as 0.1.8.
     version="$(tr -d '\r\n' < ../VERSION)"
@@ -119,7 +123,7 @@ EXPORT
 else
   : "${ANDROID_HOME:?Set ANDROID_HOME to the Android SDK directory}"
   (cd bindings && gomobile bind -target=android/arm64 -androidapi=26 \
-    -ldflags='-extldflags=-Wl,-z,max-page-size=16384,-z,common-page-size=16384' \
+    -ldflags="$relay_ldflags -extldflags=-Wl,-z,max-page-size=16384,-z,common-page-size=16384" \
     -o "$mobile_dir/.build/android/Cagemobile.aar" .)
   if [[ "$1" == android-release ]]; then
     bash android/package.sh --release

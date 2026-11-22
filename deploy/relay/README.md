@@ -4,7 +4,20 @@
 
 部署中继后，使用主机连接助手登记手机的公钥指纹。Android/iOS 客户端通过设备通道操作 Claude Code CLI 会话。设备信任、保存连接与撤销由端点负责。[移动客户端](../../mobile/README.md) · [主机连接助手](../../cmd/cage-mobile-link/README.md)
 
-普通用户可直接使用[官方中继](../../mobile/README.md)。本文的自建部署默认要求管理令牌。如果运营者需要允许任何电脑创建房间，可显式启用 `--public-rooms`。应在公网入口按源 IP 限制创建频率和并发连接数，同时保留中继的全局房间上限。公开创建房间时仍需在手机和电脑上互信指纹才能操作工作台。
+源码中没有写死的中继地址。构建时可用环境变量 `CAGE_DEFAULT_RELAY=https://…` 内置一个默认中继（见下文「内置默认中继」），否则电脑端需在设置里填写中继地址后才能配对手机。本文的自建部署默认要求管理令牌。如果运营者需要允许任何电脑创建房间，可显式启用 `--public-rooms`。应在公网入口按源 IP 限制创建频率和并发连接数，同时保留中继的全局房间上限。公开创建房间时仍需在手机和电脑上互信指纹才能操作工作台。
+
+## 内置默认中继
+
+`CAGE_DEFAULT_RELAY` 在构建时写入 `internal/mobilelink.DefaultRelay`，必须是只含主机和可选端口的 HTTPS 地址。`make`、`scripts/build-windows.ps1`、`scripts/bundle-cloud-kit.mjs` 与 `mobile/build.sh` 都会读取它：
+
+```sh
+CAGE_DEFAULT_RELAY=https://relay.example.com make cage
+CAGE_DEFAULT_RELAY=https://relay.example.com bash mobile/build.sh android
+```
+
+- 电脑端：设置中的中继地址优先；留空时用内置默认中继；两者都没有时，生成配对码会提示先填写中继地址。
+- 手机端：未开启自建中继时，有内置默认中继就用它，没有就跟随扫到的配对码中的中继地址（配对码与电脑指纹同一渠道传递）。
+- 配对码始终携带中继地址，电脑和手机内置的默认值不同也能配对。
 
 ## 连接与密钥的归属
 
