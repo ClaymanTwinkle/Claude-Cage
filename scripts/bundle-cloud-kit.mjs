@@ -27,7 +27,7 @@ if (offline) {
     for (const arch of ["amd64", "arm64"]) {
       if (!fs.existsSync(path.resolve("internal/tailnetassets/assets/cage-tailnet-linux-" + arch + ".gz"))) throw Error("Build Tailscale guest assets before packaging the cloud kit");
     }
-    execFileSync("go", ["build", "-trimpath", "-ldflags", "-s -w -X github.com/sylvinus/agent-vm/internal/version.Version=" + version, "-o", binary, "./cmd/cage"], {
+    execFileSync("go", ["build", "-trimpath", "-ldflags", "-s -w -X github.com/sylvinus/agent-vm/internal/version.Version=" + version + " -X github.com/sylvinus/agent-vm/internal/mobilelink.DefaultRelay=" + (process.env.CAGE_DEFAULT_RELAY ?? ""), "-o", binary, "./cmd/cage"], {
       env: {...process.env, CGO_ENABLED:"0", GOOS:"linux", GOARCH:"amd64"}, stdio:"inherit"
     });
     await pipeline(fs.createReadStream(binary), createGzip(), fs.createWriteStream(binary + ".gz"));

@@ -31,7 +31,13 @@ func TestScanEnrollsOnlyHolderOfOriginalCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tampered := range []bool{true, false} {
+	// An empty selected relay is a phone with no relay setting: it follows the
+	// relay carried by the optical code.
+	for _, tc := range []struct {
+		tampered bool
+		selected string
+	}{{true, edge.URL}, {false, edge.URL}, {false, ""}} {
+		tampered := tc.tampered
 		room, err := CreateRoom(ctx, edge.URL, admin)
 		if err != nil {
 			t.Fatal(err)
@@ -48,7 +54,7 @@ func TestScanEnrollsOnlyHolderOfOriginalCode(t *testing.T) {
 				return PairedHost{1, edge.URL, desktop.Pin, strings.Repeat("A", 43)}, nil
 			})
 		}()
-		if _, err := RedeemPair(ctx, raw, OfficialRelay, phone.Pin); err == nil {
+		if _, err := RedeemPair(ctx, raw, "https://other-relay.example", phone.Pin); err == nil {
 			t.Fatal("accepted unexpected relay")
 		}
 		if tampered {
@@ -58,7 +64,7 @@ func TestScanEnrollsOnlyHolderOfOriginalCode(t *testing.T) {
 			payload, _ := json.Marshal(changed)
 			raw = "CAGE1:" + string(payload)
 		}
-		got, clientErr := RedeemPair(ctx, raw, edge.URL, phone.Pin)
+		got, clientErr := RedeemPair(ctx, raw, tc.selected, phone.Pin)
 		hostErr := <-done
 		if tampered {
 			if enrolled != "" || hostErr == nil || clientErr == nil {
@@ -75,5 +81,34 @@ func TestScanEnrollsOnlyHolderOfOriginalCode(t *testing.T) {
 		if _, err = expired.identity(); err == nil {
 			t.Fatal("expired optical pairing accepted")
 		}
+	}
+}
+
+func TestRelayResolution(t *testing.T) {
+	defer func(old string) { DefaultRelay = old }(DefaultRelay)
+	DefaultRelay = ""
+	if _, err := ResolveRelay(""); err == nil {
+		t.Fatal("resolved a relay without configuration or build default")
+	}
+	if got, err := ResolveRelay("https://relay.example"); err != nil || got != "https://relay.example" {
+		t.Fatalf("configured relay = %q, %v", got, err)
+	}
+	if (PairCode{}).origin() != "" {
+		t.Fatal("legacy code without relay resolved to a relay with no build default")
+	}
+	DefaultRelay = "https://default.example"
+	if got, err := ResolveRelay(""); err != nil || got != DefaultRelay {
+		t.Fatalf("default relay = %q, %v", got, err)
+	}
+	if (PairCode{}).origin() != DefaultRelay {
+		t.Fatal("legacy code without relay did not use the build default")
+	}
+	code, _, err := NewPairCode(DefaultRelay, relay.Invitation{ID: "room", ClientToken: "token", ExpiresAt: time.Now().Add(time.Minute)}, "sha256:x")
+	if err != nil || code.Relay != DefaultRelay {
+		t.Fatalf("pairing code relay = %q, %v", code.Relay, err)
+	}
+	DefaultRelay = "http://not-https.example"
+	if _, err := ResolveRelay(""); err == nil {
+		t.Fatal("accepted an invalid build default")
 	}
 }

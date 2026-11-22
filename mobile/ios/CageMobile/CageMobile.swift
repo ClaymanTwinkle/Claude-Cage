@@ -40,7 +40,12 @@ final class DeviceWebBridge: NSObject, WKScriptMessageHandler {
 
 final class ConnectionModel: ObservableObject {
 
-    @Published var relay = CMConnection.defaultRelay()
+    // An empty default means this build has no built-in relay; pairing then
+    // follows the relay carried by the desktop's pairing code.
+    @Published var relay = CMConnection.defaultRelay() {
+        didSet { if relay != CMConnection.defaultRelay() { customRelay = true } }
+    }
+    @Published var customRelay = false
     @Published var pin = ""
     @Published var fingerprint = ""
     @Published var verified = false
@@ -114,6 +119,12 @@ final class ConnectionModel: ObservableObject {
         }
     }
     func saveRelay() {
+        if !customRelay {
+            relay = CMConnection.defaultRelay()
+            UserDefaults.standard.set(relay,forKey:"preferred-relay")
+            status = relay.isEmpty ? "中继设置已保存，配对时使用电脑配对码中的中继。" : "中继设置已保存。"
+            return
+        }
         let input = relay.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let u = URLComponents(string: input), u.scheme?.lowercased() == "https",
               let host=u.host, !host.isEmpty, u.user==nil, u.password==nil, u.query==nil, u.fragment==nil,
@@ -593,12 +604,12 @@ private struct SettingsScreen: View {
                 Button("已归档会话", action: model.openArchivedSessions)
                     .disabled(model.selectedDevice == nil && !model.canConnect)
                 DisclosureGroup("中继设置", isExpanded: $relaySettings) {
-                    Toggle("使用自建中继", isOn: Binding(get: {model.relay != CMConnection.defaultRelay()},
-                                                     set: {model.relay = $0 ? "" : CMConnection.defaultRelay()}))
-                    if model.relay != CMConnection.defaultRelay() {
+                    Toggle("使用自建中继", isOn: Binding(get: {model.customRelay},
+                                                     set: {model.customRelay = $0; model.relay = $0 ? "" : CMConnection.defaultRelay()}))
+                    if model.customRelay {
                         TextField("自建 VPS 的 HTTPS 地址", text: $model.relay)
                             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    } else {Text("Cage 官方中继").foregroundStyle(.secondary)}
+                    } else {Text(CMConnection.defaultRelay().isEmpty ? "跟随电脑配对码中的中继" : "内置默认中继").foregroundStyle(.secondary)}
                     Button("保存中继设置", action: model.saveRelay)
                 }
                 DisclosureGroup("指纹与连接文件", isExpanded: $advanced) {

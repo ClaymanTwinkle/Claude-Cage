@@ -12,7 +12,14 @@ import (
 	"github.com/sylvinus/agent-vm/internal/mobilelink/nativeclient"
 )
 
-func DefaultRelay() string { return mobilelink.OfficialRelay }
+// DefaultRelay is the relay built into this app, or "" when none was injected
+// at build time. With "" the phone follows the relay carried by the pairing code.
+func DefaultRelay() string {
+	if !mobilelink.HasDefaultRelay() {
+		return ""
+	}
+	return mobilelink.DefaultRelay
+}
 
 type DeviceSigner interface {
 	PublicKeyDER() ([]byte, error)

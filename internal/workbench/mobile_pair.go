@@ -261,10 +261,13 @@ func (s *Server) pairPhone(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	origin := s.preferences.MobileRelay
 	s.mu.Unlock()
-	if origin == "" {
-		origin = mobilelink.OfficialRelay
+	custom := origin != "" && !(mobilelink.HasDefaultRelay() && origin == mobilelink.DefaultRelay)
+	origin, err := mobilelink.ResolveRelay(origin)
+	if err != nil {
+		requestError(w, err)
+		return
 	}
-	if input.Admin != "" && (origin == mobilelink.OfficialRelay || origin != input.Relay) {
+	if input.Admin != "" && (!custom || origin != input.Relay) {
 		requestError(w, errors.New("请先保存自建中继地址"))
 		return
 	}
