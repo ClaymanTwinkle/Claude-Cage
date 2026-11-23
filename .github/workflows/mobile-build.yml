@@ -116,11 +116,19 @@ jobs:
     # Compile check without signing. With `testflight` and the CAGE_ASC_* /
     # CAGE_IOS_* secrets it instead archives with Apple cloud signing and
     # uploads to TestFlight (`mobile/build.sh ios-testflight TEAM_ID`).
-    # App Store Connect accepts only uploads built with the iOS 26 SDK or later;
-    # macos-15 defaults to Xcode 16.4, macos-26 to Xcode 26.
-    runs-on: macos-26
+    # From April 2027 App Store Connect accepts only uploads built with the
+    # iOS 27 SDK or later (ITMS-90725). macos-26 ships only Xcode 26, so use
+    # the xcode-27 image (macOS 27, Xcode 27 by default) until a macos-27 label
+    # is generally available.
+    runs-on: xcode-27
     timeout-minutes: 40
     steps:
+      - name: Require the iOS 27 SDK or later
+        run: |
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK $sdk"
+          (( ${sdk%%.*} >= 27 )) || { echo "::error::App Store Connect requires the iOS 27 SDK or later, found $sdk." >&2; exit 1; }
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}

@@ -1,0 +1,6 @@
+# Runner labels actionlint does not know yet.
+self-hosted-runner:
+  labels:
+    # GitHub-hosted preview image with macOS 27 and Xcode 27 (actions/runner-images#14404).
+    # Remove once actionlint lists it, or when mobile-build.yml moves to macos-27.
+    - xcode-27
