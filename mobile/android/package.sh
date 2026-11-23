@@ -33,7 +33,10 @@ esac
 [[ -f "$aar" && -f "$mobile_dir/.build/resources/mobile-ui/mobile.html" && -f "$platform" ]] || { echo 'Missing native AAR, mobile UI, or Android platform.' >&2; exit 1; }
 mkdir -p "$build"
 work="$(mktemp -d "$build/package.XXXXXX")"
-trap 'rm -rf "$work"' EXIT
+# macOS /bin/bash 3.2 reports status 0 to the EXIT trap after a set -u error, so
+# only a run that reached the end may exit successfully.
+finished=
+trap 'status=$?; rm -rf "$work"; if [[ "$status" == 0 && -z "$finished" ]]; then status=1; fi; exit "$status"' EXIT
 mkdir -p "$work/classes" "$work/dex" "$work/aar" "$work/apk/lib/arm64-v8a"
 mkdir -p "$work/brand/drawable-nodpi"
 cp "$mobile_dir/assets/pair-devices.png" "$work/brand/drawable-nodpi/pair_devices.png"
@@ -77,3 +80,4 @@ fi
 "$tools/zipalign" -c -P 16 4 "$work/signed.apk"
 mv "$work/signed.apk" "$out"
 echo "$out"
+finished=1
