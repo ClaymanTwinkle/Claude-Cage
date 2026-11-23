@@ -9,6 +9,8 @@ sdk="${ANDROID_HOME:?Set ANDROID_HOME to the Android SDK directory}"
 tools="$sdk/build-tools/${CAGE_BUILD_TOOLS:-35.0.0}"
 platform="$sdk/platforms/android-${CAGE_ANDROID_PLATFORM:-35}/android.jar"
 if [[ -n "${JAVA_HOME:-}" ]]; then export PATH="$JAVA_HOME/bin:$PATH"; fi
+# Debug builds leave this empty. Expand it as ${version_args[@]+"${version_args[@]}"}:
+# macOS /bin/bash 3.2 treats "${empty[@]}" as unbound under set -u.
 version_args=()
 signing_args=()
 case "${1:-}" in
@@ -42,7 +44,7 @@ mkdir -p "$work/apk/assets/licenses"
 cp "$android/licenses/ZXing-LICENSE.txt" "$work/apk/assets/licenses/"
 "$tools/aapt2" compile --dir "$android/res" -o "$work/res.zip"
 "$tools/aapt2" compile --dir "$work/brand" -o "$work/brand.zip"
-"$tools/aapt2" link -o "$work/base.apk" -I "$platform" -A "$mobile_dir/.build/resources" --manifest "$android/AndroidManifest.xml" "${version_args[@]}" "$work/res.zip" "$work/brand.zip"
+"$tools/aapt2" link -o "$work/base.apk" -I "$platform" -A "$mobile_dir/.build/resources" --manifest "$android/AndroidManifest.xml" ${version_args[@]+"${version_args[@]}"} "$work/res.zip" "$work/brand.zip"
 zxing="$build/zxing-core-3.5.3.jar"
 if [[ ! -f "$zxing" ]]; then
   curl --fail --location --silent --show-error https://repo.maven.apache.org/maven2/com/google/zxing/core/3.5.3/core-3.5.3.jar -o "$work/zxing.jar"
